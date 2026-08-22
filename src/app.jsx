@@ -485,7 +485,7 @@ const StoreLayout = ({ children }) => {
   return (
     <div className="flex flex-col min-h-screen">
       <header className="sticky top-0 z-40 bg-[#F4F3EF]/90 backdrop-blur-md border-b border-[#E5E4E0]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div className="mx-auto flex h-16 min-w-0 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-8">
             <div onClick={() => handleNav('/', true)} className="cursor-pointer">
               <Logo />
@@ -498,7 +498,7 @@ const StoreLayout = ({ children }) => {
             </nav>
           </div>
           
-          <div className="flex items-center gap-4">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-4">
             <div className="relative hidden md:block">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#858884]" />
               <input 
@@ -1325,6 +1325,7 @@ const AdminLogin = () => {
 const AdminLayout = ({ children }) => {
   const { user, logout, navigate, currentRoute, theme, toggleTheme } = useContext(AppContext);
   const [activeOrderCount, setActiveOrderCount] = useState(0);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -1350,6 +1351,10 @@ const AdminLayout = ({ children }) => {
       supabase.removeChannel(ordersChannel);
     };
   }, []);
+
+  useEffect(() => {
+    setIsMobileNavOpen(false);
+  }, [currentRoute]);
   
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -1361,7 +1366,7 @@ const AdminLayout = ({ children }) => {
   return (
     <div className="motion-fade-in min-h-screen bg-[#0B0B0C] text-[#F1F1EF] flex font-sans selection:bg-[#9C6644]/30">
       {/* Sidebar */}
-      <aside className="w-64 bg-[#17191C] border-r border-[#24272A] flex flex-col md:flex h-screen sticky top-0">
+      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-[#24272A] bg-[#17191C] md:flex">
         <div className="p-6 border-b border-[#24272A]">
           <Logo dark={theme === 'dark'} />
         </div>
@@ -1405,19 +1410,47 @@ const AdminLayout = ({ children }) => {
       </aside>
 
       {/* Main Content Area */}
-      <main className="grow flex flex-col h-screen overflow-hidden">
-        <header className="h-16 bg-[#17191C]/80 backdrop-blur-md border-b border-[#24272A] flex items-center justify-between px-8 shrink-0">
-           <div className="flex items-center gap-2 text-[#858884] text-sm">
-             <Lock className="h-4 w-4" /> Environment: Production Database
+      <main className="flex min-w-0 grow flex-col overflow-hidden md:h-screen">
+        <header className="relative flex min-h-16 shrink-0 items-center justify-between border-b border-[#24272A] bg-[#17191C]/80 px-4 backdrop-blur-md sm:px-8">
+           <div className="flex min-w-0 items-center gap-2 text-sm text-[#858884]">
+             <button type="button" onClick={() => setIsMobileNavOpen((open) => !open)} className="inline-flex shrink-0 items-center justify-center rounded-lg border border-[#4A5568]/40 bg-[#24272A] p-2 text-[#F1F1EF] hover:bg-[#30343A] md:hidden" aria-label={isMobileNavOpen ? 'Close administrator navigation' : 'Open administrator navigation'} aria-expanded={isMobileNavOpen}>
+               {isMobileNavOpen ? <X className="h-4 w-4" aria-hidden="true" /> : <Menu className="h-4 w-4" aria-hidden="true" />}
+             </button>
+             <Lock className="hidden h-4 w-4 shrink-0 sm:block" />
+             <span className="hidden truncate sm:inline">Environment: Production Database</span>
+             <span className="sm:hidden">Admin</span>
            </div>
            <div className="flex items-center gap-3">
              <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
              <button onClick={() => navigate('/')} className="text-xs bg-[#24272A] hover:bg-[#1D2023] px-3 py-1.5 rounded border border-[#4A5568]/30 transition-colors">
-               View Public Storefront
+               <span className="hidden sm:inline">View Public Storefront</span>
+               <span className="sm:hidden">Store</span>
              </button>
            </div>
+           {isMobileNavOpen && (
+             <nav className="absolute left-0 right-0 top-full z-50 border-b border-[#24272A] bg-[#17191C] p-3 shadow-xl md:hidden" aria-label="Administrator navigation">
+               <div className="grid gap-1">
+                 {navItems.map((item) => {
+                   const path = `/hq-operations/${item.id}`;
+                   const active = currentRoute.includes(item.id) || (currentRoute === '/hq-operations' && item.id === 'dashboard');
+                   return (
+                     <button
+                       key={item.id}
+                       type="button"
+                       onClick={() => navigate(path)}
+                       className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm font-medium transition-colors ${active ? 'bg-[#9C6644] text-white' : 'text-[#B8BAB7] hover:bg-[#24272A] hover:text-[#F1F1EF]'}`}
+                     >
+                       <item.icon className="h-4 w-4 shrink-0" />
+                       <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                       {item.id === 'orders' && activeOrderCount > 0 && <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-[#9C6644] px-1.5 py-0.5 text-[10px] font-bold text-white">{activeOrderCount}</span>}
+                     </button>
+                   );
+                 })}
+               </div>
+             </nav>
+           )}
         </header>
-        <div className="grow overflow-y-auto p-8">
+        <div className="min-w-0 grow overflow-y-auto p-4 sm:p-8">
            <div className="max-w-6xl mx-auto">
              {children}
            </div>

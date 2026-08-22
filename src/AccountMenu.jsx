@@ -75,7 +75,7 @@ export default function AccountMenu({ user, onTrackOrder, onMyOrders }) {
   };
 
   return (
-    <div className="relative">
+    <div className="relative z-50">
       <button
         type="button"
         onClick={() => setIsOpen((current) => !current)}
@@ -87,7 +87,7 @@ export default function AccountMenu({ user, onTrackOrder, onMyOrders }) {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 top-12 z-50 w-[min(92vw,360px)] rounded-2xl border border-[#E5E4E0] bg-white p-5 text-left shadow-2xl">
+        <div className="fixed inset-x-4 top-20 z-50 max-h-[calc(100dvh-6rem)] overflow-y-auto rounded-2xl border border-[#E5E4E0] bg-white p-5 text-left shadow-2xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-12 sm:max-h-none sm:w-[min(92vw,360px)] sm:overflow-visible">
           <button type="button" onClick={closeMenu} className="absolute right-3 top-3 rounded-full p-1 text-[#858884] hover:bg-[#F4F3EF] hover:text-[#111214]" aria-label="Close account menu">
             <X className="h-4 w-4" />
           </button>
