@@ -1,0 +1,2164 @@
+import React, { useState, useEffect, useContext, useMemo, useReducer } from 'react';
+import toast from 'react-hot-toast';
+import { 
+  ShoppingCart, Search, Menu, X, User, ChevronRight, 
+  Package, LayoutDashboard, Settings, LogOut, 
+  TrendingUp, Users, DollarSign, Edit, Trash2, Plus,
+  ShieldCheck, AlertTriangle, CheckCircle2, Lock,
+  Printer, Download, ImagePlus, Moon, Sun
+} from 'lucide-react';
+import { supabase } from './supabaseClient';
+import SecureAdminLogin from './AdminLogin';
+import SecureProductEditor from './ProductEditor';
+import LiveApplianceCatalog from './ApplianceCatalog';
+import Checkout from './Checkout';
+import OrderTracking from './OrderTracking';
+import SupabaseAdminOrders from './AdminOrders';
+import SupabaseAdminMembers from './AdminMembers';
+import AccountMenu from './AccountMenu';
+import ResetPassword from './ResetPassword';
+import PresenceTracker from './PresenceTracker';
+import { SUPPORT_EMAIL, SUPPORT_PHONE } from './businessInfo';
+
+// --- BRANDING ---
+const Logo = ({ className = "", dark = false }) => (
+  <div className={`flex items-center gap-2 ${className}`}>
+    <div className="w-8 h-8 rounded-bl-xl rounded-tr-xl bg-[#9C6644] flex items-center justify-center text-white font-serif italic text-xl shadow-sm">
+      W
+    </div>
+    <span className={`font-extrabold tracking-tight text-xl ${dark ? 'text-white' : 'text-[#111214]'}`}>
+      Wen<span className="text-[#9C6644] font-normal">Appliances</span>
+    </span>
+  </div>
+);
+
+const ThemeToggle = ({ theme, toggleTheme }) => (
+  <button
+    type="button"
+    onClick={toggleTheme}
+    aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+    title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+    className="inline-flex items-center gap-2 rounded-full border border-[#E5E4E0] bg-white px-3 py-2 text-xs font-semibold text-[#4A5568] transition hover:border-[#9C6644] hover:text-[#9C6644]"
+  >
+    {theme === 'dark' ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}
+    <span className="hidden sm:inline">{theme === 'dark' ? 'Light' : 'Dark'} theme</span>
+  </button>
+);
+
+// --- GLOBAL STATE & CONTEXT ---
+const AppContext = React.createContext();
+
+class AdminRouteErrorBoundary extends React.Component {
+  state = { error: null };
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error) {
+    console.error('Admin page error:', error);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+
+    return (
+      <section className="rounded-xl border border-red-500/30 bg-red-500/10 p-8 text-red-200" role="alert">
+        <h1 className="text-xl font-bold">This admin page could not load</h1>
+        <p className="mt-2 text-sm text-red-200/80">Refresh your administrator session and try this section again.</p>
+        {this.state.error?.message && <p className="mt-3 break-words rounded-lg bg-black/20 p-3 text-xs text-red-200/70">{this.state.error.message}</p>}
+        <button type="button" onClick={() => window.location.reload()} className="mt-5 rounded-lg bg-[#9C6644] px-4 py-2 text-sm font-semibold text-white hover:bg-[#8A5A3C]">Refresh admin session</button>
+      </section>
+    );
+  }
+}
+
+const formatMoney = (amount) => {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+};
+
+const parseImageList = (value) => {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  if (typeof value !== 'string' || !value.trim()) return [];
+
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : [value];
+  } catch {
+    return [value];
+  }
+};
+
+const normalizeProduct = (product) => {
+  const storedImages = parseImageList(product.images);
+  const image = product.image || product.image_url || product.imageUrl || storedImages[0] || '';
+  const gallery = parseImageList(product.gallery);
+  const allImages = [...new Set([image, ...storedImages, ...gallery].filter(Boolean))];
+  const stock = Number(product.stock ?? 0);
+
+  return {
+    ...product,
+    name: product.name || 'Unnamed appliance',
+    sku: product.sku || '—',
+    category: product.category || 'Other',
+    description: product.description || '',
+    price: Number(product.price ?? 0),
+    cost: Number(product.cost ?? 0),
+    stock,
+    status: String(product.status || (stock > 0 ? 'PUBLISHED' : 'OUT_OF_STOCK')).toUpperCase(),
+    image,
+    images: allImages,
+    gallery: allImages
+  };
+};
+
+const getProductImages = (product) => {
+  const normalized = normalizeProduct(product);
+  return [...new Set([normalized.image, ...normalized.gallery].filter(Boolean))];
+};
+
+const getWenAppliancesStoragePath = (value) => {
+  if (typeof value !== 'string' || !value.trim()) return null;
+
+  const marker = '/storage/v1/object/public/Wenappliances/';
+  const markerIndex = value.indexOf(marker);
+  if (markerIndex === -1) return null;
+
+  const path = value.slice(markerIndex + marker.length).split('?')[0];
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+};
+
+const ProductPlaceholder = ({ className = '', dark = false }) => (
+  <div className={`flex items-center justify-center ${dark ? 'bg-[#24272A] text-[#858884]' : 'bg-[#EAE8E1] text-[#9C6644]'} ${className}`}>
+    <Package className="h-10 w-10 opacity-50" />
+  </div>
+);
+
+const mapAuthUser = (authUser) => {
+  if (!authUser) return null;
+
+  return {
+    id: authUser.id,
+    email: authUser.email || '',
+    // Authorization roles must come from trusted app_metadata, never user-editable user_metadata.
+    role: authUser.app_metadata?.role || 'CUSTOMER',
+    name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'User'
+  };
+};
+
+export default function App() {
+  const [currentRoute, setCurrentRoute] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).has('reset-password') ? '/reset-password' : '/';
+    } catch {
+      return '/';
+    }
+  });
+  const [user, setUser] = useState(null); // null = guest
+  const [theme, setTheme] = useState(() => {
+    try {
+      const savedTheme = window.localStorage.getItem('wenappliances-theme');
+      return savedTheme === 'dark' || savedTheme === 'light' ? savedTheme : 'light';
+    } catch {
+      return 'light';
+    }
+  });
+  
+  // Search & Filter State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState('');
+  
+  // Database State
+  const [products, setProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [productsError, setProductsError] = useState('');
+  const [orders, setOrders] = useState([]);
+  const [trackingPrefill, setTrackingPrefill] = useState(null);
+  
+  // Cart State
+  const [cart, setCart] = useState([]);
+  const [isCartOpen, setIsCartOpen] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (mounted) setUser(mapAuthUser(session?.user));
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(mapAuthUser(session?.user));
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const loadProducts = async () => {
+    setProductsLoading(true);
+    setProductsError('');
+
+    const { data, error } = await supabase
+      .from('products')
+      .select('*');
+
+    if (error) {
+      setProducts([]);
+      setProductsError(error.message);
+    } else {
+      setProducts((data ?? []).map(normalizeProduct));
+    }
+
+    setProductsLoading(false);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchProducts() {
+      setProductsLoading(true);
+      setProductsError('');
+
+      const { data, error } = await supabase
+        .from('products')
+        .select('*');
+
+      if (cancelled) return;
+
+      if (error) {
+        setProducts([]);
+        setProductsError(error.message);
+      } else {
+        setProducts((data ?? []).map(normalizeProduct));
+      }
+
+      setProductsLoading(false);
+    }
+
+    fetchProducts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Router logic
+  const navigate = (path) => {
+    setCurrentRoute(path);
+    window.scrollTo(0, 0);
+  };
+
+  // Cart Logic
+  const addToCart = (productId, quantity = 1) => {
+    const product = products.find(p => p.id === productId);
+    if (!product || product.stock < quantity) {
+        alert("Not enough stock available."); // Fallback if UI check fails
+        return;
+    }
+    
+    setCart(prev => {
+      const existing = prev.find(item => item.productId === productId);
+      if (existing) {
+        // Enforce stock limit in cart
+        const newQty = Math.min(existing.quantity + quantity, product.stock);
+        return prev.map(item => item.productId === productId ? { ...item, quantity: newQty } : item);
+      }
+      return [...prev, { productId, quantity, price: product.price, name: product.name, image: product.image }];
+    });
+    setIsCartOpen(true);
+  };
+
+  const updateCartQty = (productId, qty) => {
+    if (qty <= 0) {
+      setCart(prev => prev.filter(item => item.productId !== productId));
+      return;
+    }
+    const product = products.find(p => p.id === productId);
+    if (product && qty > product.stock) return; // Prevent exceeding stock
+    
+    setCart(prev => prev.map(item => item.productId === productId ? { ...item, quantity: qty } : item));
+  };
+
+  const clearCart = () => setCart([]);
+
+  const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  // Order Logic
+  const placeOrder = async (customerDetails) => {
+    if (cart.length === 0) return false;
+
+    const orderId = `ORD-${new Date().toISOString().split('T')[0].replace(/-/g, '')}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+    
+    const newOrder = {
+      id: orderId,
+      userId: user ? user.id : 'guest',
+      customerName: customerDetails.name,
+      total: cartTotal,
+      status: 'PENDING',
+      date: new Date().toISOString(),
+      items: [...cart]
+    };
+
+    for (const cartItem of cart) {
+      const product = products.find(p => p.id === cartItem.productId);
+      if (!product || product.stock < cartItem.quantity) return false;
+    }
+
+    // Checkout still needs a server-side order/payment transaction before it
+    // can safely change shared inventory. Keep this local until that backend
+    // workflow is added instead of allowing anonymous database writes.
+    setProducts(prevProducts => prevProducts.map(product => {
+      const cartItem = cart.find(c => c.productId === product.id);
+      if (!cartItem) return product;
+
+      const newStock = product.stock - cartItem.quantity;
+      return { ...product, stock: newStock, status: newStock <= 0 ? 'OUT_OF_STOCK' : product.status };
+    }));
+
+    setOrders(prev => [newOrder, ...prev]);
+    setCart([]);
+    return orderId;
+  };
+
+  const saveProduct = async (product) => {
+    const { isNew, id, created_at, updated_at, ...formProduct } = product;
+    const images = parseImageList(formProduct.gallery || formProduct.images || formProduct.image);
+    const payload = {
+      name: formProduct.name,
+      category: formProduct.category,
+      price: Number(formProduct.price),
+      stock: Number(formProduct.stock),
+      description: formProduct.description || '',
+      images
+    };
+
+    const query = isNew
+      ? supabase.from('products').insert(payload).select().single()
+      : supabase.from('products').update(payload).eq('id', id).select().single();
+    const { data, error } = await query;
+
+    if (error) throw error;
+
+    const savedProduct = normalizeProduct(data);
+    setProducts(prev => isNew
+      ? [savedProduct, ...prev]
+      : prev.map(item => item.id === savedProduct.id ? savedProduct : item)
+    );
+    return savedProduct;
+  };
+
+  const deleteProduct = async (product) => {
+    const productId = typeof product === 'object' ? product?.id : product;
+    if (!productId) throw new Error('This product is missing its database ID.');
+
+    const productImages = typeof product === 'object'
+      ? [
+          ...parseImageList(product.images),
+          ...parseImageList(product.gallery),
+          ...parseImageList(product.image)
+        ]
+      : [];
+    const storagePaths = [...new Set(productImages.map(getWenAppliancesStoragePath).filter(Boolean))];
+
+    const { error: deleteError } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', productId);
+
+    if (deleteError) throw deleteError;
+
+    setProducts((currentProducts) => currentProducts.filter((item) => item.id !== productId));
+    setCart((currentCart) => currentCart.filter((item) => item.productId !== productId));
+
+    if (storagePaths.length === 0) return { storageWarning: '' };
+
+    const { error: storageError } = await supabase.storage
+      .from('Wenappliances')
+      .remove(storagePaths);
+
+    return { storageWarning: storageError?.message || '' };
+  };
+
+  // Auth Logic
+  const login = async (email, password) => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error || !data.user) return false;
+
+    const signedInUser = mapAuthUser(data.user);
+    if (signedInUser.role !== 'SUPER_ADMIN') {
+      await supabase.auth.signOut();
+      return false;
+    }
+
+    setUser(signedInUser);
+    return true;
+  };
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    navigate('/');
+  };
+
+  const toggleTheme = () => setTheme((currentTheme) => currentTheme === 'dark' ? 'light' : 'dark');
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.body.dataset.theme = theme;
+    try {
+      window.localStorage.setItem('wenappliances-theme', theme);
+    } catch {
+      // Continue without persistence if browser storage is unavailable.
+    }
+  }, [theme]);
+
+  const contextValue = {
+    user, login, logout,
+    products, setProducts, saveProduct, deleteProduct, loadProducts, productsLoading, productsError,
+    orders, setOrders,
+    cart, addToCart, updateCartQty, clearCart, cartTotal, cartItemCount, isCartOpen, setIsCartOpen,
+    placeOrder,
+    navigate, currentRoute,
+    theme, toggleTheme,
+    searchQuery, setSearchQuery,
+    activeCategory, setActiveCategory
+  };
+
+  // --- ROUTER DISPATCHER ---
+  const renderRoute = () => {
+    // Admin Routes
+    if (currentRoute.startsWith('/hq-operations')) {
+      if (!user || user.role !== 'SUPER_ADMIN') {
+        return <SecureAdminLogin theme={theme} toggleTheme={toggleTheme} onAuthenticated={() => navigate('/hq-operations/dashboard')} onClose={() => navigate('/')} />;
+      }
+      return <AdminLayout><AdminRouteErrorBoundary key={currentRoute}><AdminRouter route={currentRoute} /></AdminRouteErrorBoundary></AdminLayout>;
+    }
+
+    // Storefront Routes
+    return (
+      <StoreLayout>
+        {currentRoute === '/' && <StoreHome />}
+        {currentRoute === '/products' && <LiveApplianceCatalog onProductClick={(productId) => navigate(`/product/${productId}`)} />}
+        {currentRoute.startsWith('/product/') && <StoreProductDetail id={currentRoute.split('/')[2]} />}
+        {currentRoute === '/checkout' && <Checkout cart={cart} cartTotal={cartTotal} clearCart={clearCart} navigate={navigate} onOrderPlaced={({ orderId, email }) => setTrackingPrefill({ orderId, email })} />}
+        {currentRoute === '/reset-password' && <ResetPassword navigate={navigate} />}
+        {currentRoute === '/my-orders' && <OrderTracking initialValues={{ email: user?.email || '' }} accountMode />}
+        {currentRoute.startsWith('/track-order') && <OrderTracking initialValues={{ email: trackingPrefill?.email || user?.email || '' }} />}
+      </StoreLayout>
+    );
+  };
+
+  return (
+    <AppContext.Provider value={contextValue}>
+      <div className="min-h-screen font-sans bg-[#F4F3EF] text-[#111214] antialiased">
+        {renderRoute()}
+      </div>
+      <PresenceTracker user={user} />
+    </AppContext.Provider>
+  );
+}
+
+// ============================================================================
+// STOREFRONT COMPONENTS
+// Theme: "Muted Professionalism" (Off-white bg, Charcoal text, Copper accents)
+// ============================================================================
+
+const StoreLayout = ({ children }) => {
+  const { cartItemCount, setIsCartOpen, navigate, user, searchQuery, setSearchQuery, setActiveCategory, productsLoading, productsError, loadProducts, theme, toggleTheme } = useContext(AppContext);
+  const [isContactOpen, setIsContactOpen] = useState(false);
+  const [contactSent, setContactSent] = useState(false);
+  
+  const handleNav = (path, clearFilters = false) => {
+    if (clearFilters) {
+      setSearchQuery('');
+      setActiveCategory('');
+    }
+    navigate(path);
+  };
+
+  return (
+    <div className="flex flex-col min-h-screen">
+      <header className="sticky top-0 z-40 bg-[#F4F3EF]/90 backdrop-blur-md border-b border-[#E5E4E0]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-8">
+            <div onClick={() => handleNav('/', true)} className="cursor-pointer">
+              <Logo />
+            </div>
+            <nav className="hidden md:flex gap-6 text-sm font-medium text-[#4A5568]">
+              <button onClick={() => handleNav('/', true)} className="hover:text-[#111214] transition-colors">Home</button>
+              <button onClick={() => handleNav('/products', true)} className="hover:text-[#111214] transition-colors">All Products</button>
+              <button onClick={() => navigate('/track-order')} className="hover:text-[#111214] transition-colors">Track Order</button>
+              <button onClick={() => setIsContactOpen(true)} className="hover:text-[#111214] transition-colors">Support</button>
+            </nav>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <div className="relative hidden md:block">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#858884]" />
+              <input 
+                type="text" 
+                placeholder="Search products..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    navigate('/products');
+                  }
+                }}
+                className="pl-10 pr-4 py-2 bg-white border border-[#E5E4E0] rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-[#9C6644]/50 w-64 transition-all"
+              />
+            </div>
+            
+            <AccountMenu user={user} onTrackOrder={() => navigate('/track-order')} onMyOrders={() => navigate('/my-orders')} />
+
+            <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
+            
+            <button 
+              onClick={() => setIsCartOpen(true)}
+              className="p-2 hover:bg-[#E5E4E0] rounded-full transition-colors relative"
+            >
+              <ShoppingCart className="h-5 w-5 text-[#4A5568]" />
+              {cartItemCount > 0 && (
+                <span className="absolute top-0 right-0 bg-[#9C6644] text-white text-[10px] font-bold h-4 w-4 flex items-center justify-center rounded-full">
+                  {cartItemCount}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+      </header>
+      
+      <main className="grow">
+        {productsLoading && (
+          <div className="bg-[#111214] text-white px-4 py-3 text-center text-sm">
+            Loading the live appliance catalog...
+          </div>
+        )}
+        {productsError && (
+          <div className="bg-red-50 border-b border-red-200 text-red-800 px-4 py-3 text-center text-sm">
+            <span>We could not load products from Supabase: {productsError}</span>
+            <button onClick={loadProducts} className="ml-3 font-semibold underline">Try again</button>
+          </div>
+        )}
+        {children}
+      </main>
+      
+      <footer className="bg-[#111214] text-[#F1F1EF] py-12 mt-auto">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-4 gap-8">
+          <div>
+            <button type="button" onClick={() => navigate('/hq-operations')} className="mb-4 block text-left" aria-label="Administrator access">
+              <Logo dark={true} />
+            </button>
+            <p className="text-[#B8BAB7] text-sm leading-relaxed">Premium electronics and appliances for the modern lifestyle. Quality assured.</p>
+          </div>
+          <div>
+            <h3 className="font-semibold mb-4 text-[#F1F1EF]">Shop</h3>
+            <ul className="space-y-2 text-sm text-[#B8BAB7]">
+              <li><button onClick={() => navigate('/products')} className="hover:text-white transition-colors">All Products</button></li>
+              <li><button onClick={() => navigate('/products')} className="hover:text-white transition-colors">Shop by Category</button></li>
+              <li><button onClick={() => navigate('/products')} className="hover:text-white transition-colors">Compare Appliances</button></li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-semibold mb-4 text-[#F1F1EF]">Support</h3>
+            <ul className="space-y-2 text-sm text-[#B8BAB7]">
+              <li><button onClick={() => setIsContactOpen(true)} className="hover:text-white transition-colors">Contact Us</button></li>
+              <li><button onClick={() => navigate('/track-order')} className="hover:text-white transition-colors">Track Order</button></li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-semibold mb-4 text-[#F1F1EF]">Newsletter</h3>
+            <p className="text-[#B8BAB7] text-sm mb-4">Subscribe for updates on new arrivals and offers.</p>
+            <div className="flex">
+              <input type="email" placeholder="Email address" className="bg-[#1D2023] border border-[#24272A] px-3 py-2 rounded-l-md text-sm w-full focus:outline-none focus:border-[#9C6644]" />
+              <button className="bg-[#9C6644] hover:bg-[#8A5A3C] text-white px-4 py-2 rounded-r-md text-sm font-medium transition-colors">Subscribe</button>
+            </div>
+          </div>
+        </div>
+        
+        {/* Watermark Section */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12 pt-8 border-t border-[#24272A] flex flex-col md:flex-row items-center justify-between text-sm text-[#858884]">
+          <p>&copy; 2026 WenAppliances. All rights reserved.</p>
+          <p className="mt-4 md:mt-0 font-medium tracking-wide text-[#9C6644] flex items-center gap-2">
+            @gikunju creates
+          </p>
+        </div>
+      </footer>
+
+      {/* Contact Modal */}
+      {isContactOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setIsContactOpen(false)}>
+          <div className="bg-white rounded-xl p-6 md:p-8 max-w-md w-full relative shadow-2xl" onClick={e => e.stopPropagation()}>
+            <button onClick={() => {setIsContactOpen(false); setContactSent(false);}} className="absolute top-4 right-4 text-[#858884] hover:text-[#111214]"><X className="h-5 w-5" /></button>
+            
+            {contactSent ? (
+              <div className="text-center py-8">
+                <CheckCircle2 className="h-16 w-16 text-green-500 mx-auto mb-4" />
+                <h3 className="text-xl font-bold mb-2 text-[#111214]">Message Sent</h3>
+                  <p className="text-[#4A5568]">Your message has been successfully sent to {SUPPORT_EMAIL}. We'll get back to you shortly.</p>
+              </div>
+            ) : (
+              <>
+                <h3 className="text-2xl font-bold mb-6 text-[#111214]">Contact Support</h3>
+                
+                <div className="mb-6 p-4 bg-[#F4F3EF] rounded-lg border border-[#E5E4E0] text-sm text-[#4A5568] space-y-2 text-left">
+                  <p className="font-medium text-[#111214]">Direct Contact Information:</p>
+                  <p>Email: <a href={`mailto:${SUPPORT_EMAIL}`} className="text-[#9C6644] hover:underline">{SUPPORT_EMAIL}</a></p>
+                  <p>Phone: {SUPPORT_PHONE}</p>
+                </div>
+
+                <div className="space-y-4 text-left">
+                  <div>
+                    <label className="block text-sm font-medium text-[#4A5568] mb-1">Name</label>
+                    <input type="text" className="w-full border border-[#E5E4E0] rounded-lg px-4 py-2 text-[#111214] focus:ring-2 focus:ring-[#9C6644]/50 focus:border-[#9C6644] outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#4A5568] mb-1">Email</label>
+                    <input type="email" className="w-full border border-[#E5E4E0] rounded-lg px-4 py-2 text-[#111214] focus:ring-2 focus:ring-[#9C6644]/50 focus:border-[#9C6644] outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#4A5568] mb-1">Message</label>
+                    <textarea rows={4} className="w-full border border-[#E5E4E0] rounded-lg px-4 py-2 text-[#111214] focus:ring-2 focus:ring-[#9C6644]/50 focus:border-[#9C6644] outline-none resize-none"></textarea>
+                  </div>
+                  <button onClick={() => setContactSent(true)} className="w-full bg-[#111214] text-white py-3 rounded-lg font-medium hover:bg-[#24272A] transition-colors mt-4">Send to {SUPPORT_EMAIL}</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      <CartDrawer />
+    </div>
+  );
+};
+
+const CartDrawer = () => {
+  const { cart, isCartOpen, setIsCartOpen, updateCartQty, cartTotal, navigate } = useContext(AppContext);
+
+  if (!isCartOpen) return null;
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 transition-opacity" onClick={() => setIsCartOpen(false)} />
+      <div className="fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
+        <div className="flex items-center justify-between p-4 border-b border-[#E5E4E0]">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <ShoppingCart className="h-5 w-5" /> Your Cart
+          </h2>
+          <button onClick={() => setIsCartOpen(false)} className="p-2 hover:bg-[#F4F3EF] rounded-full transition-colors">
+            <X className="h-5 w-5 text-[#4A5568]" />
+          </button>
+        </div>
+        
+        <div className="grow overflow-y-auto p-4 space-y-4">
+          {cart.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center space-y-4 text-[#858884]">
+              <Package className="h-12 w-12 opacity-20" />
+              <p>Your cart is empty.</p>
+              <button onClick={() => { setIsCartOpen(false); navigate('/products'); }} className="text-[#9C6644] font-medium hover:underline">Continue Shopping</button>
+            </div>
+          ) : (
+            cart.map(item => (
+              <div key={item.productId} className="flex gap-4 bg-[#F4F3EF] p-3 rounded-lg border border-[#E5E4E0]">
+                <button
+                  type="button"
+                  onClick={() => { setIsCartOpen(false); navigate(`/product/${item.productId}`); }}
+                  className="w-20 h-20 rounded-md bg-white cursor-pointer hover:opacity-80 transition-opacity overflow-hidden"
+                >
+                  {item.image ? (
+                    <img src={item.image} alt={item.name} className="product-photo h-full w-full object-cover" />
+                  ) : (
+                    <ProductPlaceholder className="w-full h-full" />
+                  )}
+                </button>
+                <div className="grow flex flex-col justify-between">
+                  <div>
+                    <h3 
+                      onClick={() => { setIsCartOpen(false); navigate(`/product/${item.productId}`); }}
+                      className="font-medium text-sm line-clamp-2 cursor-pointer hover:text-[#9C6644] transition-colors"
+                    >
+                      {item.name}
+                    </h3>
+                    <p className="text-[#9C6644] font-semibold mt-1">{formatMoney(item.price)}</p>
+                  </div>
+                  <div className="flex items-center justify-between mt-2">
+                    <div className="flex items-center border border-[#E5E4E0] rounded bg-white">
+                      <button onClick={() => updateCartQty(item.productId, item.quantity - 1)} className="px-2 py-1 text-[#4A5568] hover:bg-[#F4F3EF]">-</button>
+                      <span className="px-2 py-1 text-sm font-medium w-8 text-center">{item.quantity}</span>
+                      <button onClick={() => updateCartQty(item.productId, item.quantity + 1)} className="px-2 py-1 text-[#4A5568] hover:bg-[#F4F3EF]">+</button>
+                    </div>
+                    <button onClick={() => updateCartQty(item.productId, 0)} className="text-xs text-red-500 font-medium hover:underline">Remove</button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        
+        {cart.length > 0 && (
+          <div className="border-t border-[#E5E4E0] p-4 bg-white space-y-4">
+            <div className="flex justify-between items-center text-lg font-bold">
+              <span>Subtotal</span>
+              <span>{formatMoney(cartTotal)}</span>
+            </div>
+            <p className="text-xs text-[#858884]">Taxes and delivery calculated at checkout.</p>
+            <button 
+              onClick={() => { setIsCartOpen(false); navigate('/checkout'); }}
+              className="w-full bg-[#9C6644] hover:bg-[#8A5A3C] text-white py-3 rounded-lg font-medium transition-colors shadow-sm"
+            >
+              Proceed to Checkout
+            </button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+};
+
+const StoreHome = () => {
+  const { products, navigate, productsLoading } = useContext(AppContext);
+  const featured = products.filter(p => p.status === 'PUBLISHED').slice(0, 4);
+
+  return (
+    <div>
+      {/* Hero Section */}
+      <section className="motion-fade-in relative bg-[#111214] text-white overflow-hidden">
+        <div className="absolute inset-0 z-0 overflow-hidden">
+           <div className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-[#9C6644]/30 blur-3xl"></div>
+           <div className="absolute -bottom-40 right-1/3 h-96 w-96 rounded-full bg-[#F4F3EF]/10 blur-3xl"></div>
+           <div className="absolute inset-0 bg-linear-to-r from-[#111214] via-[#111214]/95 to-[#9C6644]/20"></div>
+        </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 md:py-32 relative z-10">
+          <div className="max-w-xl">
+            <span className="text-[#9C6644] font-bold tracking-wider text-sm uppercase mb-4 block">Premium Home Appliances</span>
+            <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-6 leading-tight">Elevate Your Living Space.</h2>
+            <p className="text-lg text-[#B8BAB7] mb-8 leading-relaxed">Discover our curated selection of high-performance refrigerators, washers, and dryers. Engineered for reliability, designed for elegance.</p>
+            <button 
+              onClick={() => navigate('/products')}
+              className="bg-[#9C6644] hover:bg-[#8A5A3C] text-white px-8 py-3 rounded-lg font-medium transition-colors shadow-lg"
+            >
+              Shop the Collection
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Featured Products */}
+      <section className="motion-fade-up max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+        <div className="flex justify-between items-end mb-8">
+          <div>
+            <h3 className="text-2xl font-bold tracking-tight">Featured Products</h3>
+            <p className="text-[#4A5568] mt-1 text-sm">Handpicked premium tech.</p>
+          </div>
+          <button onClick={() => navigate('/products')} className="text-[#9C6644] font-medium text-sm flex items-center hover:underline">
+            View All <ChevronRight className="h-4 w-4 ml-1" />
+          </button>
+        </div>
+        
+        <div className="motion-stagger grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {productsLoading ? (
+            <div className="col-span-full py-16 text-center text-[#858884]">Loading products...</div>
+          ) : featured.length === 0 ? (
+            <div className="col-span-full py-16 text-center text-[#858884]">Your live catalog is ready for products.</div>
+          ) : featured.map(product => (
+            <ProductCard key={product.id} product={product} />
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+};
+
+const ProductCard = ({ product }) => {
+  const { navigate, addToCart } = useContext(AppContext);
+  const isOutOfStock = product.stock <= 0;
+  const primaryImage = getProductImages(product)[0];
+
+  return (
+    <div className="motion-card bg-white rounded-xl shadow-sm border border-[#E5E4E0] overflow-hidden group hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col h-full">
+      <div 
+        className="product-photo-surface relative aspect-square cursor-pointer overflow-hidden bg-[#F4F3EF]"
+        onClick={() => navigate(`/product/${product.id}`)}
+      >
+        {primaryImage ? (
+          <img
+            src={primaryImage}
+            alt={product.name}
+            className="product-photo h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
+          />
+        ) : (
+          <ProductPlaceholder className="w-full h-full" />
+        )}
+        {isOutOfStock && (
+          <div className="absolute top-2 right-2 bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded">
+            Out of Stock
+          </div>
+        )}
+      </div>
+      <div className="p-4 flex flex-col grow">
+        <p className="text-xs text-[#858884] font-medium mb-1 uppercase tracking-wider">{product.category}</p>
+        <h4 
+          onClick={() => navigate(`/product/${product.id}`)}
+          className="font-semibold text-[#111214] mb-2 line-clamp-2 cursor-pointer hover:text-[#9C6644] transition-colors"
+        >
+          {product.name}
+        </h4>
+        <div className="mt-auto flex items-center justify-between">
+          <span className="font-bold text-lg text-[#111214]">{formatMoney(product.price)}</span>
+          <button 
+            onClick={() => addToCart(product.id)}
+            disabled={isOutOfStock}
+            className={`p-2 rounded-full transition-colors ${isOutOfStock ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-[#F4F3EF] text-[#111214] hover:bg-[#9C6644] hover:text-white'}`}
+            title="Add to Cart"
+          >
+            <ShoppingCart className="h-5 w-5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const StoreCatalog = () => {
+  const { products, searchQuery, setSearchQuery, activeCategory, setActiveCategory } = useContext(AppContext);
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
+
+  const activeProducts = products.filter(p => {
+    if (p.status === 'ARCHIVED') return false;
+    if (activeCategory && p.category !== activeCategory) return false;
+    if (searchQuery && !p.name.toLowerCase().includes(searchQuery.toLowerCase()) && !p.category.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    if (minPrice && p.price < Number(minPrice)) return false;
+    if (maxPrice && p.price > Number(maxPrice)) return false;
+    return true;
+  });
+
+  const categories = ['Refrigerators', 'Washers', 'Dryers', 'Ovens', 'Microwaves', 'TVs', 'Other'];
+
+  return (
+    <div className="motion-fade-up max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="mb-8">
+        <h2 className="text-3xl font-bold tracking-tight">
+          {searchQuery ? `Search Results for "${searchQuery}"` : (activeCategory || 'All Products')}
+        </h2>
+        <p className="text-[#4A5568] mt-2">Browse our complete catalog of premium electronics.</p>
+      </div>
+      
+      <div className="flex flex-col md:flex-row gap-8">
+        {/* Filters Sidebar */}
+        <div className="w-full md:w-64 shrink-0 space-y-8 md:sticky md:top-24 self-start">
+          <div>
+            <h4 className="font-semibold mb-4 border-b border-[#E5E4E0] pb-2">Categories</h4>
+            <ul className="space-y-3 text-sm text-[#4A5568]">
+              <li 
+                className={`flex items-center justify-between cursor-pointer transition-colors ${!activeCategory ? 'text-[#9C6644] font-bold' : 'hover:text-[#9C6644]'}`}
+                onClick={() => setActiveCategory('')}
+              >
+                All Categories
+              </li>
+              {categories.map(cat => (
+                <li 
+                  key={cat} 
+                  className={`flex items-center justify-between cursor-pointer transition-colors ${activeCategory === cat ? 'text-[#9C6644] font-bold' : 'hover:text-[#9C6644]'}`}
+                  onClick={() => setActiveCategory(cat)}
+                >
+                  <span>{cat}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+             <h4 className="font-semibold mb-4 border-b border-[#E5E4E0] pb-2">Price Range (USD)</h4>
+             <div className="flex items-center gap-2">
+               <input 
+                 type="number" 
+                 placeholder="Min" 
+                 value={minPrice}
+                 onChange={(e) => setMinPrice(e.target.value)}
+                 className="w-full border border-[#E5E4E0] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#9C6644] focus:ring-1 focus:ring-[#9C6644]"
+               />
+               <span className="text-[#858884]">-</span>
+               <input 
+                 type="number" 
+                 placeholder="Max" 
+                 value={maxPrice}
+                 onChange={(e) => setMaxPrice(e.target.value)}
+                 className="w-full border border-[#E5E4E0] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#9C6644] focus:ring-1 focus:ring-[#9C6644]"
+               />
+             </div>
+             <button 
+               onClick={() => { setMinPrice(''); setMaxPrice(''); }}
+               className="mt-3 text-xs text-[#858884] hover:text-[#111214] underline"
+             >
+               Clear Price Filter
+             </button>
+          </div>
+        </div>
+        
+        {/* Product Grid */}
+        <div className="grow">
+          {activeProducts.length === 0 ? (
+            <div className="text-center py-20 bg-white rounded-xl border border-[#E5E4E0] shadow-sm">
+              <p className="text-lg text-[#858884]">No products found matching your criteria.</p>
+              <button 
+                onClick={() => { setActiveCategory(''); setSearchQuery(''); setMinPrice(''); setMaxPrice(''); }}
+                className="mt-4 text-[#9C6644] font-medium hover:underline"
+              >
+                Clear all filters
+              </button>
+            </div>
+          ) : (
+            <div className="motion-stagger grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {activeProducts.map(product => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const StoreProductDetail = ({ id }) => {
+  const { products, addToCart } = useContext(AppContext);
+  const product = products.find(p => p.id === id);
+  const [qty, setQty] = useState(1);
+  const [imgIndex, setImgIndex] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  if (!product) return <div className="p-20 text-center">Product not found.</div>;
+  const isOutOfStock = product.stock <= 0;
+
+  const images = getProductImages(product);
+
+  const nextImg = (e) => {
+    e.stopPropagation();
+    setImgIndex((prev) => (prev + 1) % images.length);
+  };
+  
+  const prevImg = (e) => {
+    e.stopPropagation();
+    setImgIndex((prev) => (prev - 1 + images.length) % images.length);
+  };
+
+  return (
+    <div className="motion-fade-up max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      
+      {/* FULLSCREEN MODAL */}
+      {isFullscreen && images.length > 0 && (
+        <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4">
+          <button 
+            onClick={() => setIsFullscreen(false)} 
+            className="absolute top-6 right-6 text-white hover:text-gray-300 transition-colors z-50"
+          >
+            <X className="h-8 w-8" />
+          </button>
+          
+          {images.length > 1 && (
+            <button onClick={prevImg} className="absolute left-6 text-white p-3 hover:bg-white/10 rounded-full transition-colors z-50">
+              <ChevronRight className="h-10 w-10 rotate-180" />
+            </button>
+          )}
+          
+          <div className="relative w-full h-full flex items-center justify-center" onClick={() => setIsFullscreen(false)}>
+            <img
+              src={images[imgIndex]}
+              alt={product.name}
+              className="product-photo max-w-full max-h-full object-contain cursor-zoom-out animate-in zoom-in-95 duration-300"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+          
+          {images.length > 1 && (
+            <button onClick={nextImg} className="absolute right-6 text-white p-3 hover:bg-white/10 rounded-full transition-colors z-50">
+              <ChevronRight className="h-10 w-10" />
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl shadow-sm border border-[#E5E4E0] overflow-hidden flex flex-col md:flex-row">
+        {/* Image Gallery area */}
+        <div className="product-photo-surface w-full md:w-1/2 bg-[#F4F3EF] p-8 flex flex-col items-center relative">
+          
+          {/* Main Image */}
+          <div 
+            className="relative w-full aspect-square flex items-center justify-center cursor-zoom-in group"
+            onClick={() => images.length > 0 && setIsFullscreen(true)}
+          >
+            {images.length > 0 ? (
+              <img
+                key={imgIndex}
+                src={images[imgIndex]}
+                alt={product.name}
+                className="product-photo max-w-full max-h-full object-contain drop-shadow-xl animate-in fade-in duration-500"
+              />
+            ) : (
+              <ProductPlaceholder className="w-full h-full rounded-xl" />
+            )}
+            
+            {images.length > 1 && (
+              <>
+                <button 
+                  onClick={prevImg}
+                  className="absolute left-2 bg-white/80 backdrop-blur hover:bg-white p-2 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-all duration-300"
+                >
+                  <ChevronRight className="h-5 w-5 rotate-180 text-black" />
+                </button>
+                <button 
+                  onClick={nextImg}
+                  className="absolute right-2 bg-white/80 backdrop-blur hover:bg-white p-2 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-all duration-300"
+                >
+                  <ChevronRight className="h-5 w-5 text-black" />
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Thumbnails */}
+          {images.length > 1 && (
+            <div className="flex gap-4 mt-6 overflow-x-auto pb-2 w-full justify-center">
+              {images.map((img, idx) => (
+                <button 
+                  key={idx}
+                  onClick={() => setImgIndex(idx)}
+                  className={`w-16 h-16 rounded-md bg-white border-2 overflow-hidden transition-all shrink-0 ${imgIndex === idx ? 'border-[#9C6644] opacity-100 scale-110 shadow-sm' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                >
+                  <img src={img} alt={`Thumb ${idx}`} className="product-photo h-full w-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {isOutOfStock && (
+             <div className="absolute top-4 left-4 bg-red-100 text-red-700 px-3 py-1 rounded-md font-bold text-sm tracking-wide shadow-sm">
+               OUT OF STOCK
+             </div>
+          )}
+        </div>
+        
+        {/* Product Info */}
+        <div className="w-full md:w-1/2 p-8 lg:p-12 flex flex-col">
+          <p className="text-sm text-[#858884] font-semibold uppercase tracking-wider mb-2">{product.category} • SKU: {product.sku}</p>
+          <h1 className="text-3xl lg:text-4xl font-extrabold tracking-tight text-[#111214] mb-4">{product.name}</h1>
+          <p className="text-2xl font-bold text-[#9C6644] mb-6">{formatMoney(product.price)}</p>
+          
+          <p className="text-[#4A5568] text-base leading-relaxed mb-8 border-b border-[#E5E4E0] pb-8">
+            {product.description}
+          </p>
+          
+          <div className="mt-auto space-y-6">
+            <div className="flex items-center gap-4">
+              <span className="text-sm font-medium text-[#4A5568]">Quantity</span>
+              <div className="flex items-center border border-[#E5E4E0] rounded-lg overflow-hidden bg-white">
+                <button onClick={() => setQty(Math.max(1, qty - 1))} className="px-4 py-2 text-[#4A5568] hover:bg-[#F4F3EF] transition-colors">-</button>
+                <span className="px-4 py-2 font-medium w-12 text-center border-x border-[#E5E4E0]">{qty}</span>
+                <button 
+                  onClick={() => setQty(Math.min(product.stock, qty + 1))} 
+                  disabled={qty >= product.stock}
+                  className="px-4 py-2 text-[#4A5568] hover:bg-[#F4F3EF] transition-colors disabled:opacity-50"
+                >
+                  +
+                </button>
+              </div>
+              <span className="text-sm text-[#858884]">{product.stock} available</span>
+            </div>
+            
+            <button 
+              onClick={() => addToCart(product.id, qty)}
+              disabled={isOutOfStock}
+              className={`add-to-cart-button w-full py-4 rounded-xl font-bold text-lg transition-all shadow-md ${
+                isOutOfStock 
+                  ? 'bg-gray-200 text-gray-500 cursor-not-allowed shadow-none' 
+                  : 'bg-[#111214] text-white hover:bg-[#24272A] hover:shadow-lg active:scale-[0.98]'
+              }`}
+            >
+              {isOutOfStock ? 'Currently Unavailable' : 'Add to Cart'}
+            </button>
+            
+            <div className="grid grid-cols-1 gap-3 text-sm text-[#4A5568] pt-4 border-t border-[#E5E4E0] sm:grid-cols-2">
+              <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 shrink-0 text-[#9C6644]"/> 3 Months Warranty</div>
+              <div className="flex items-center gap-2"><Package className="h-4 w-4 shrink-0 text-[#9C6644]"/> Delivery is offered</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const StoreCheckout = () => {
+  const { cart, cartTotal, placeOrder, navigate } = useContext(AppContext);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [orderComplete, setOrderComplete] = useState(false);
+  const [orderId, setOrderId] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('stripe');
+  
+  const [formData, setFormData] = useState({ name: '', email: '', address: '', phone: '' });
+
+  if (orderComplete) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-20 text-center">
+        <div className="bg-white p-12 rounded-2xl shadow-sm border border-[#E5E4E0] flex flex-col items-center">
+          <CheckCircle2 className="h-20 w-20 text-green-500 mb-6" />
+          <h2 className="text-3xl font-bold mb-2">Order Confirmed!</h2>
+          <p className="text-[#4A5568] mb-6">Thank you for your purchase. Your order has been placed successfully.</p>
+          <div className="bg-[#F4F3EF] p-4 rounded-lg w-full max-w-sm mb-8">
+            <p className="text-sm text-[#858884] uppercase tracking-wider mb-1">Order Number</p>
+            <p className="font-mono font-bold text-lg text-[#111214]">{orderId}</p>
+          </div>
+          <button onClick={() => navigate('/')} className="bg-[#111214] text-white px-8 py-3 rounded-lg font-medium hover:bg-[#24272A] transition-colors">
+            Return to Store
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (cart.length === 0) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-20 text-center">
+        <h2 className="text-2xl font-bold mb-4">Checkout Error</h2>
+        <p className="mb-6">Your cart is empty.</p>
+        <button onClick={() => navigate('/products')} className="bg-[#9C6644] text-white px-6 py-2 rounded-lg">Browse Products</button>
+      </div>
+    );
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsProcessing(true);
+
+    try {
+      const newOrderId = await placeOrder(formData);
+      if (newOrderId) {
+        setOrderId(newOrderId);
+        setOrderComplete(true);
+      } else {
+        alert("Error processing order. Check stock and your Supabase permissions.");
+      }
+    } catch (error) {
+      alert(error.message || "Error processing order.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <h2 className="text-3xl font-bold tracking-tight mb-8">Secure Checkout</h2>
+      
+      <div className="flex flex-col lg:flex-row gap-8">
+        <div className="w-full lg:w-2/3">
+          <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-[#E5E4E0] p-6 sm:p-8">
+            <h3 className="text-xl font-semibold mb-6 pb-2 border-b border-[#E5E4E0] flex items-center gap-2">
+              <User className="h-5 w-5 text-[#9C6644]" /> Customer Information
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+              <div>
+                <label className="block text-sm font-medium text-[#4A5568] mb-2">Full Name *</label>
+                <input required type="text" value={formData.name} onChange={e=>setFormData({...formData, name: e.target.value})} className="w-full border border-[#E5E4E0] rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#9C6644]/50 focus:border-[#9C6644] outline-none transition-all" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#4A5568] mb-2">Email Address *</label>
+                <input required type="email" value={formData.email} onChange={e=>setFormData({...formData, email: e.target.value})} className="w-full border border-[#E5E4E0] rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#9C6644]/50 focus:border-[#9C6644] outline-none transition-all" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-[#4A5568] mb-2">Delivery Address *</label>
+                <input required type="text" value={formData.address} onChange={e=>setFormData({...formData, address: e.target.value})} className="w-full border border-[#E5E4E0] rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#9C6644]/50 focus:border-[#9C6644] outline-none transition-all" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-[#4A5568] mb-2">Phone Number *</label>
+                <input required type="tel" value={formData.phone} onChange={e=>setFormData({...formData, phone: e.target.value})} className="w-full border border-[#E5E4E0] rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#9C6644]/50 focus:border-[#9C6644] outline-none transition-all" placeholder="(555) 123-4567" />
+              </div>
+            </div>
+
+            <h3 className="text-xl font-semibold mb-6 pb-2 border-b border-[#E5E4E0] flex items-center gap-2 mt-8">
+              <Lock className="h-5 w-5 text-[#9C6644]" /> Payment Method
+            </h3>
+            <div className="space-y-4 mb-8">
+               {['stripe', 'venmo', 'cashapp', 'cash'].map(method => (
+                 <div 
+                   key={method} 
+                   onClick={() => setPaymentMethod(method)} 
+                   className={`flex items-center gap-3 p-4 border rounded-lg cursor-pointer transition-colors ${paymentMethod === method ? 'border-[#9C6644] bg-[#9C6644]/5' : 'border-[#E5E4E0] hover:bg-[#F4F3EF]'}`}
+                 >
+                    <input type="radio" name="payment" checked={paymentMethod === method} readOnly className="accent-[#9C6644]" />
+                    <span className="font-medium text-[#111214]">
+                      {method === 'stripe' && 'Credit / Debit Card (Stripe)'}
+                      {method === 'venmo' && 'Venmo'}
+                      {method === 'cashapp' && 'Cash App'}
+                      {method === 'cash' && 'Cash on Delivery'}
+                    </span>
+                 </div>
+               ))}
+            </div>
+
+            <button 
+              type="submit" 
+              disabled={isProcessing}
+              className="w-full bg-[#111214] hover:bg-[#24272A] text-white py-4 rounded-xl font-bold text-lg transition-colors shadow-md flex justify-center items-center gap-2 disabled:opacity-70"
+            >
+              {isProcessing ? <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : `Pay ${formatMoney(cartTotal)}`}
+            </button>
+          </form>
+        </div>
+
+        <div className="w-full lg:w-1/3">
+          <div className="bg-[#F4F3EF] rounded-xl border border-[#E5E4E0] p-6 sticky top-24">
+            <h3 className="text-lg font-bold mb-4 border-b border-[#E5E4E0] pb-2">Order Summary</h3>
+            <div className="space-y-4 mb-6 max-h-96 overflow-y-auto pr-2">
+              {cart.map(item => (
+                <div key={item.productId} className="flex justify-between text-sm">
+                  <div className="flex gap-3">
+                    {item.image ? (
+                      <img src={item.image} alt={item.name} className="w-12 h-12 object-cover rounded bg-white border border-[#E5E4E0]" />
+                    ) : (
+                      <ProductPlaceholder className="w-12 h-12 rounded border border-[#E5E4E0]" />
+                    )}
+                    <div>
+                      <p className="font-medium line-clamp-1">{item.name}</p>
+                      <p className="text-[#858884]">Qty: {item.quantity}</p>
+                    </div>
+                  </div>
+                  <p className="font-semibold text-right">{formatMoney(item.price * item.quantity)}</p>
+                </div>
+              ))}
+            </div>
+            <div className="border-t border-[#E5E4E0] pt-4 space-y-2 text-sm">
+              <div className="flex justify-between text-[#4A5568]">
+                <span>Subtotal</span>
+                <span>{formatMoney(cartTotal)}</span>
+              </div>
+              <div className="flex justify-between text-[#4A5568]">
+                <span>Delivery (Estimated)</span>
+                <span>Free</span>
+              </div>
+              <div className="flex justify-between font-bold text-lg pt-2 border-t border-[#E5E4E0] mt-2">
+                <span>Total</span>
+                <span className="text-[#9C6644]">{formatMoney(cartTotal)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// ADMIN (HQ-OPERATIONS) COMPONENTS
+// Theme: "Charcoal Dashboard" (Dark bg, Off-white text, Copper accents)
+// STRICTLY SEPARATE VISUAL IDENTITY from Storefront
+// ============================================================================
+
+const AdminLogin = () => {
+  const { login, navigate } = useContext(AppContext);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      if (await login(email, password)) {
+        navigate('/hq-operations/dashboard');
+      } else {
+        setError('Invalid credentials or insufficient permissions.');
+      }
+    } catch (loginError) {
+      setError(loginError.message || 'Unable to sign in.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0B0B0C] flex flex-col items-center justify-center p-4">
+      <div className="w-full max-w-md bg-[#17191C] border border-[#24272A] rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+        <div className="p-8 pb-6 border-b border-[#24272A] flex flex-col items-center">
+          <Logo dark={true} className="mb-2 scale-110 origin-center" />
+          <p className="text-center text-[#858884] text-sm mt-2 flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-[#9C6644]" /> HQ Operations Portal
+          </p>
+        </div>
+        <form onSubmit={handleLogin} className="p-8 space-y-6">
+          {error && <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-3 rounded text-sm text-center">{error}</div>}
+          <div>
+            <label className="block text-[#B8BAB7] text-sm font-medium mb-2">Admin Email</label>
+            <input 
+              type="email" value={email} onChange={e=>setEmail(e.target.value)} required
+              className="w-full bg-[#0B0B0C] border border-[#24272A] rounded-lg px-4 py-3 text-[#F1F1EF] focus:outline-none focus:border-[#9C6644] focus:ring-1 focus:ring-[#9C6644] transition-all"
+            />
+          </div>
+          <div>
+            <label className="block text-[#B8BAB7] text-sm font-medium mb-2">Master Password</label>
+            <input 
+              type="password" value={password} onChange={e=>setPassword(e.target.value)} required
+              className="w-full bg-[#0B0B0C] border border-[#24272A] rounded-lg px-4 py-3 text-[#F1F1EF] focus:outline-none focus:border-[#9C6644] focus:ring-1 focus:ring-[#9C6644] transition-all"
+            />
+          </div>
+          <button type="submit" disabled={isSubmitting} className="w-full bg-[#9C6644] hover:bg-[#8A5A3C] text-white py-3 rounded-lg font-bold transition-colors disabled:opacity-60">
+            {isSubmitting ? 'Signing in...' : 'Sign in securely'}
+          </button>
+        </form>
+      </div>
+      <button onClick={() => navigate('/')} className="mt-8 text-[#858884] hover:text-[#F1F1EF] text-sm transition-colors flex items-center gap-2">
+        <ChevronRight className="h-4 w-4 rotate-180" /> Back to Public Store
+      </button>
+    </div>
+  );
+};
+
+const AdminLayout = ({ children }) => {
+  const { user, logout, navigate, currentRoute, theme, toggleTheme } = useContext(AppContext);
+  const [activeOrderCount, setActiveOrderCount] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+
+    const refreshActiveOrderCount = async () => {
+      const { data, error } = await supabase.from('orders').select('id, status');
+      if (!active || error) return;
+
+      const count = (data ?? []).filter((order) => String(order.status || '').toLowerCase() !== 'cancelled').length;
+      setActiveOrderCount(count);
+    };
+
+    refreshActiveOrderCount();
+    const refreshTimer = window.setInterval(refreshActiveOrderCount, 10000);
+    const ordersChannel = supabase
+      .channel(`admin-order-indicator-${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, refreshActiveOrderCount)
+      .subscribe();
+
+    return () => {
+      active = false;
+      window.clearInterval(refreshTimer);
+      supabase.removeChannel(ordersChannel);
+    };
+  }, []);
+  
+  const navItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'products', label: 'Inventory & Products', icon: Package },
+    { id: 'orders', label: 'Order Management', icon: ShoppingCart },
+    { id: 'members', label: 'Members', icon: Users },
+  ];
+
+  return (
+    <div className="motion-fade-in min-h-screen bg-[#0B0B0C] text-[#F1F1EF] flex font-sans selection:bg-[#9C6644]/30">
+      {/* Sidebar */}
+      <aside className="w-64 bg-[#17191C] border-r border-[#24272A] flex flex-col md:flex h-screen sticky top-0">
+        <div className="p-6 border-b border-[#24272A]">
+          <Logo dark={theme === 'dark'} />
+        </div>
+        <nav className="grow py-6 px-3 space-y-1">
+          {navItems.map(item => {
+            const path = `/hq-operations/${item.id}`;
+            const active = currentRoute.includes(item.id) || (currentRoute === '/hq-operations' && item.id === 'dashboard');
+            return (
+              <button 
+                key={item.id}
+                onClick={() => navigate(path)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  active ? 'bg-[#9C6644] text-white' : 'text-[#B8BAB7] hover:bg-[#24272A] hover:text-[#F1F1EF]'
+                }`}
+              >
+                <item.icon className="h-4 w-4" />
+                <span className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left">
+                  <span className="truncate">{item.label}</span>
+                  {item.id === 'orders' && activeOrderCount > 0 && (
+                    <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-[#9C6644] px-1.5 py-0.5 text-[10px] font-bold text-white" aria-label={`${activeOrderCount} active orders`}>
+                      {activeOrderCount}
+                    </span>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </nav>
+        <div className="p-4 border-t border-[#24272A] flex flex-col gap-4">
+           <div className="flex items-center gap-3 px-2">
+             <div className="h-8 w-8 rounded-full bg-[#24272A] flex items-center justify-center text-[#9C6644] font-bold text-xs">{user.name.charAt(0)}</div>
+             <div className="flex flex-col">
+               <span className="text-sm font-medium text-[#F1F3EF]">{user.name}</span>
+               <span className="text-[10px] text-[#858884] uppercase tracking-wider">{user.role}</span>
+             </div>
+           </div>
+           <button onClick={logout} className="flex items-center gap-2 text-sm text-[#858884] hover:text-red-400 px-2 py-1 transition-colors">
+              <LogOut className="h-4 w-4" /> Terminate Session
+           </button>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <main className="grow flex flex-col h-screen overflow-hidden">
+        <header className="h-16 bg-[#17191C]/80 backdrop-blur-md border-b border-[#24272A] flex items-center justify-between px-8 shrink-0">
+           <div className="flex items-center gap-2 text-[#858884] text-sm">
+             <Lock className="h-4 w-4" /> Environment: Production Database
+           </div>
+           <div className="flex items-center gap-3">
+             <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
+             <button onClick={() => navigate('/')} className="text-xs bg-[#24272A] hover:bg-[#1D2023] px-3 py-1.5 rounded border border-[#4A5568]/30 transition-colors">
+               View Public Storefront
+             </button>
+           </div>
+        </header>
+        <div className="grow overflow-y-auto p-8">
+           <div className="max-w-6xl mx-auto">
+             {children}
+           </div>
+        </div>
+      </main>
+    </div>
+  );
+};
+
+const AdminRouter = ({ route }) => {
+  if (route.includes('new-product')) return <AdminNewProduct />;
+  if (route.includes('members')) return <SupabaseAdminMembers />;
+  if (route.includes('products')) return <AdminProducts />;
+  if (route.includes('orders')) return <SupabaseAdminOrders />;
+  return <AdminDashboard />;
+};
+
+const AdminNewProduct = () => {
+  const { navigate, loadProducts } = useContext(AppContext);
+
+  return (
+    <SecureProductEditor
+      onSaved={async () => {
+        await loadProducts();
+        navigate('/hq-operations/products');
+      }}
+    />
+  );
+};
+
+const AdminDashboard = () => {
+  const { orders, products } = useContext(AppContext);
+  
+  // Analytics Calculations
+  const totalRevenue = orders.filter(o => o.status !== 'CANCELLED').reduce((sum, o) => sum + o.total, 0);
+  const totalOrders = orders.length;
+  const pendingOrders = orders.filter(o => o.status === 'PENDING').length;
+  
+  // Profit Calculation (Revenue - COGS)
+  const totalProfit = orders.filter(o => o.status !== 'CANCELLED').reduce((sum, order) => {
+     let orderProfit = 0;
+     order.items.forEach(item => {
+        const product = products.find(p => p.id === item.productId);
+        if (product) {
+           orderProfit += (item.price - product.cost) * item.quantity;
+        }
+     });
+     return sum + orderProfit;
+  }, 0);
+
+  const lowStockCount = products.filter(p => p.stock < 5).length;
+
+  return (
+    <div className="space-y-8 animate-in fade-in duration-500">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Executive Dashboard</h1>
+        <p className="text-[#858884] mt-1 text-sm">Overview of operations and financial metrics.</p>
+      </div>
+
+      <div className="motion-stagger grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard title="Gross Revenue" value={formatMoney(totalRevenue)} icon={DollarSign} />
+        <StatCard title="Net Profit (Est)" value={formatMoney(totalProfit)} icon={TrendingUp} color="text-emerald-400" />
+        <StatCard title="Total Orders" value={totalOrders} icon={ShoppingCart} />
+        <StatCard 
+          title="Attention Needed" 
+          value={`${pendingOrders} Pending | ${lowStockCount} Low Stock`}
+          icon={AlertTriangle} 
+          color="text-amber-400" 
+        />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+         {/* Recent Orders Panel */}
+         <div className="col-span-2 bg-[#17191C] border border-[#24272A] rounded-xl overflow-hidden shadow-sm">
+            <div className="p-5 border-b border-[#24272A] flex justify-between items-center">
+               <h3 className="font-semibold text-[#F1F1EF]">Recent Transactions</h3>
+            </div>
+            <div className="overflow-x-auto">
+               <table className="w-full text-left text-sm">
+                 <thead className="bg-[#0B0B0C] text-[#858884] uppercase tracking-wider text-xs">
+                   <tr>
+                     <th className="px-5 py-3 font-medium">Order ID</th>
+                     <th className="px-5 py-3 font-medium">Customer</th>
+                     <th className="px-5 py-3 font-medium">Amount</th>
+                     <th className="px-5 py-3 font-medium">Status</th>
+                   </tr>
+                 </thead>
+                 <tbody className="divide-y divide-[#24272A]">
+                   {orders.slice(0, 5).map(order => (
+                     <tr key={order.id} className="hover:bg-[#1D2023] transition-colors">
+                       <td className="px-5 py-4 font-mono text-[#B8BAB7]">{order.id}</td>
+                       <td className="px-5 py-4 text-[#F1F1EF]">{order.customerName}</td>
+                       <td className="px-5 py-4 font-medium text-[#F1F1EF]">{formatMoney(order.total)}</td>
+                       <td className="px-5 py-4">
+                         <StatusBadge status={order.status} />
+                       </td>
+                     </tr>
+                   ))}
+                 </tbody>
+               </table>
+            </div>
+         </div>
+
+         {/* Inventory Alerts Panel */}
+         <div className="bg-[#17191C] border border-[#24272A] rounded-xl overflow-hidden shadow-sm">
+            <div className="p-5 border-b border-[#24272A]">
+               <h3 className="font-semibold text-[#F1F1EF] flex items-center gap-2">
+                 <AlertTriangle className="h-4 w-4 text-amber-500" /> Stock Alerts
+               </h3>
+            </div>
+            <div className="p-5 space-y-4">
+               {products.filter(p => p.stock < 10).map(product => (
+                  <div key={product.id} className="flex justify-between items-start pb-4 border-b border-[#24272A] last:border-0 last:pb-0">
+                     <div>
+                        <p className="text-sm font-medium text-[#F1F1EF] line-clamp-1">{product.name}</p>
+                        <p className="text-xs font-mono text-[#858884] mt-1">{product.sku}</p>
+                     </div>
+                     <div className={`px-2 py-1 rounded text-xs font-bold ${product.stock <= 0 ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                        {product.stock} left
+                     </div>
+                  </div>
+               ))}
+               {products.filter(p => p.stock < 10).length === 0 && (
+                  <p className="text-sm text-[#858884] text-center py-4">Inventory levels are healthy.</p>
+               )}
+            </div>
+         </div>
+      </div>
+    </div>
+  );
+};
+
+const StatCard = ({ title, value, icon: Icon, trend, color = "text-[#F1F1EF]" }) => (
+  <div className="bg-[#17191C] p-6 rounded-xl border border-[#24272A] shadow-sm flex min-h-32 flex-col justify-between">
+    <div className="flex justify-between items-start">
+      <p className="text-[#858884] text-sm font-medium">{title}</p>
+      <div className="p-2 bg-[#24272A] rounded-lg"><Icon className={`h-4 w-4 ${color === 'text-[#F1F1EF]' ? 'text-[#9C6644]' : color}`} /></div>
+    </div>
+    <div className="mt-4 flex items-start justify-between gap-3">
+      <h3 className={`min-w-0 break-words text-2xl font-bold leading-tight tracking-tight ${color}`}>
+        {typeof value === 'string' && value.includes('|')
+          ? value.split('|').map((part) => <span key={part.trim()} className="block text-xl sm:text-2xl">{part.trim()}</span>)
+          : value}
+      </h3>
+      {trend && <span className="text-xs font-medium text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded">{trend}</span>}
+    </div>
+  </div>
+);
+
+const AdminProducts = () => {
+  const { products, saveProduct, deleteProduct, productsLoading, productsError, navigate } = useContext(AppContext);
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [saveError, setSaveError] = useState('');
+  const [deletingProductId, setDeletingProductId] = useState(null);
+
+  const handleSave = async (updatedProduct) => {
+    try {
+      await saveProduct(updatedProduct);
+      setSaveError('');
+      setEditingProduct(null);
+    } catch (error) {
+      setSaveError(error.message || 'Unable to save this product.');
+      throw error;
+    }
+  };
+
+  const handleDelete = async (product) => {
+    const confirmed = window.confirm(
+      `Delete “${product.name}” completely? This removes the product and its uploaded images and cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setDeletingProductId(product.id);
+    try {
+      const result = await deleteProduct(product);
+      if (result?.storageWarning) {
+        toast.error(`Product deleted, but one or more images could not be removed: ${result.storageWarning}`);
+      } else {
+        toast.success('Product and its images were deleted completely.');
+      }
+    } catch (error) {
+      const message = error.message || 'Unable to delete this product.';
+      if (/foreign key|referenced|violates/i.test(message)) {
+        toast.error('This product is linked to an order and cannot be deleted from the catalog history.');
+      } else {
+        toast.error(message);
+      }
+    } finally {
+      setDeletingProductId(null);
+    }
+  };
+
+  if (editingProduct) {
+    return (
+      <div className="space-y-4">
+        {saveError && <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-lg p-4 text-sm">{saveError}</div>}
+        <ProductEditor product={editingProduct} onSave={handleSave} onCancel={() => { setSaveError(''); setEditingProduct(null); }} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300">
+      <div className="flex justify-between items-end">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Product Database</h1>
+          <p className="text-[#858884] mt-1 text-sm">Manage inventory, pricing, and catalog metadata.</p>
+        </div>
+        <button 
+          onClick={() => { setSaveError(''); navigate('/hq-operations/new-product'); }}
+          className="bg-[#9C6644] hover:bg-[#8A5A3C] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+        >
+          <Plus className="h-4 w-4" /> New Product
+        </button>
+      </div>
+
+      {productsError && <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-lg p-4 text-sm">{productsError}</div>}
+
+      <div className="bg-[#17191C] border border-[#24272A] rounded-xl overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-[#0B0B0C] text-[#858884] uppercase tracking-wider text-xs">
+              <tr>
+                <th className="px-6 py-4 font-medium w-12">Img</th>
+                <th className="px-6 py-4 font-medium">Product / SKU</th>
+                <th className="px-6 py-4 font-medium text-right">Price (USD)</th>
+                <th className="px-6 py-4 font-medium text-center">Stock</th>
+                <th className="px-6 py-4 font-medium">Status</th>
+                <th className="px-6 py-4 font-medium text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#24272A]">
+              {productsLoading ? (
+                <tr><td colSpan="6" className="px-6 py-10 text-center text-[#858884]">Loading products...</td></tr>
+              ) : products.map(p => (
+                <tr key={p.id} className="hover:bg-[#1D2023] transition-colors">
+                  <td className="px-6 py-4">
+                     {p.image ? <img src={p.image} alt="" className="w-10 h-10 object-cover rounded bg-white" /> : <ProductPlaceholder dark className="w-10 h-10 rounded" />}
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="font-medium text-[#F1F1EF]">{p.name}</div>
+                    <div className="text-xs font-mono text-[#858884] mt-1">{p.sku} • {p.category}</div>
+                  </td>
+                  <td className="px-6 py-4 text-right font-medium text-[#F1F1EF]">
+                    {p.price.toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 text-center">
+                    <span className={`inline-flex items-center justify-center px-2 py-1 rounded text-xs font-bold ${p.stock <= 0 ? 'bg-red-500/20 text-red-400' : (p.stock < 10 ? 'bg-amber-500/20 text-amber-400' : 'bg-[#24272A] text-[#B8BAB7]')}`}>
+                       {p.stock}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <StatusBadge status={p.status} />
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <div className="inline-flex items-center gap-1">
+                    <button type="button" onClick={() => setEditingProduct(p)} className="text-[#858884] hover:text-[#9C6644] p-2 transition-colors" title={`Edit ${p.name}`} aria-label={`Edit ${p.name}`}>
+                      <Edit className="h-4 w-4" />
+                    </button>
+                    <button type="button" onClick={() => handleDelete(p)} disabled={deletingProductId === p.id} className="p-2 text-[#858884] transition-colors hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50" title={`Delete ${p.name}`} aria-label={`Delete ${p.name}`}>
+                      {deletingProductId === p.id ? <span className="block h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" /> : <Trash2 className="h-4 w-4" />}
+                    </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ProductEditor = ({ product, onSave, onCancel }) => {
+  const [formData, setFormData] = useState({ ...product });
+  const [coverFile, setCoverFile] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+  
+  // Initialize gallery state (max 10 images)
+  const [gallery, setGallery] = useState(
+    product.gallery && product.gallery.length > 0 
+      ? product.gallery 
+      : (product.image ? [product.image] : [''])
+  );
+
+  const handleChange = (e) => {
+    const { name, value, type } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'number' ? Number(value) : value
+    }));
+  };
+
+  const handleGalleryChange = (index, value) => {
+    const newGallery = [...gallery];
+    newGallery[index] = value;
+    setGallery(newGallery);
+  };
+
+  const addGalleryImage = () => {
+    if (gallery.length < 10) setGallery([...gallery, '']);
+  };
+
+  const removeGalleryImage = (index) => {
+    setGallery(gallery.filter((_, i) => i !== index));
+  };
+
+  const handleFormSubmit = async (e) => {
+    e.preventDefault();
+    setIsSaving(true);
+    let uploadedCoverPath = '';
+
+    try {
+      // Clean up empty URLs and ensure the selected upload becomes the cover image.
+      let cleanGallery = gallery.filter(url => url.trim() !== '');
+
+      if (coverFile) {
+        const extension = coverFile.name.includes('.') ? `.${coverFile.name.split('.').pop().toLowerCase()}` : '';
+        const uniqueId = typeof globalThis.crypto?.randomUUID === 'function'
+          ? globalThis.crypto.randomUUID()
+          : Math.random().toString(36).slice(2);
+        uploadedCoverPath = `products/${Date.now()}-${uniqueId}${extension}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('Wenappliances')
+          .upload(uploadedCoverPath, coverFile);
+        if (uploadError) throw uploadError;
+
+        const { data: publicUrlData } = supabase.storage
+          .from('Wenappliances')
+          .getPublicUrl(uploadedCoverPath);
+        const newCoverUrl = publicUrlData?.publicUrl;
+        if (!newCoverUrl) throw new Error('Could not create a public URL for the new cover photo.');
+
+        cleanGallery = [newCoverUrl, ...cleanGallery.filter(url => url !== newCoverUrl)].slice(0, 10);
+      }
+
+      await onSave({
+        ...formData,
+        images: cleanGallery,
+        image: cleanGallery[0] || '',
+        gallery: cleanGallery
+      });
+      setCoverFile(null);
+      toast.success('Product details committed successfully.');
+    } catch (error) {
+      if (uploadedCoverPath) await supabase.storage.from('Wenappliances').remove([uploadedCoverPath]);
+      toast.error(error.message || 'Unable to commit product changes.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-[#17191C] border border-[#24272A] rounded-xl shadow-sm animate-in slide-in-from-bottom-4 duration-300">
+      <div className="p-6 border-b border-[#24272A] flex justify-between items-center bg-[#0B0B0C] rounded-t-xl">
+        <h2 className="text-xl font-bold text-[#F1F1EF]">
+          {product.isNew ? 'Create New Product' : `Edit Product: ${product.name || 'Appliance'}`}
+        </h2>
+        <button onClick={onCancel} className="text-[#858884] hover:text-white transition-colors">
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+      
+      <form onSubmit={handleFormSubmit} className="p-8 space-y-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="space-y-6">
+            <h3 className="text-sm font-semibold text-[#858884] uppercase tracking-wider border-b border-[#24272A] pb-2">Basic Information</h3>
+            <div>
+              <label className="block text-sm font-medium text-[#B8BAB7] mb-2">Product Name</label>
+              <input required type="text" name="name" value={formData.name} onChange={handleChange} className="w-full bg-[#0B0B0C] border border-[#24272A] rounded-lg px-4 py-2.5 text-[#F1F1EF] focus:outline-none focus:border-[#9C6644] transition-all" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-[#B8BAB7] mb-2">Product reference</label>
+                <p className="rounded-lg border border-[#24272A] bg-[#0B0B0C] px-4 py-2.5 text-sm text-[#858884]">Managed automatically by Supabase</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#B8BAB7] mb-2">Category</label>
+                <input required type="text" list="category-options" name="category" value={formData.category} onChange={handleChange} placeholder="e.g. Washers" className="w-full bg-[#0B0B0C] border border-[#24272A] rounded-lg px-4 py-2.5 text-[#F1F1EF] focus:outline-none focus:border-[#9C6644] transition-all" />
+                <datalist id="category-options">
+                  <option value="Refrigerators" />
+                  <option value="Washers" />
+                  <option value="Dryers" />
+                  <option value="Ovens" />
+                  <option value="Microwaves" />
+                  <option value="TVs" />
+                  <option value="Other" />
+                </datalist>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#B8BAB7] mb-2">Description</label>
+              <textarea rows={4} name="description" value={formData.description} onChange={handleChange} className="w-full bg-[#0B0B0C] border border-[#24272A] rounded-lg px-4 py-2.5 text-[#F1F1EF] focus:outline-none focus:border-[#9C6644] transition-all resize-none" />
+            </div>
+          </div>
+
+          <div className="space-y-6">
+             <h3 className="text-sm font-semibold text-[#858884] uppercase tracking-wider border-b border-[#24272A] pb-2">Pricing & Inventory</h3>
+             <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-[#B8BAB7] mb-2">Selling Price (USD)</label>
+                <input required type="number" name="price" value={formData.price} onChange={handleChange} className="w-full bg-[#0B0B0C] border border-[#24272A] rounded-lg px-4 py-2.5 text-[#F1F1EF] focus:outline-none focus:border-[#9C6644] transition-all font-mono" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#B8BAB7] mb-2">Inventory price</label>
+                <p className="rounded-lg border border-[#24272A] bg-[#0B0B0C] px-4 py-2.5 text-sm text-[#858884]">Only selling price is stored</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+               <div>
+                <label className="block text-sm font-medium text-[#B8BAB7] mb-2">Stock Quantity</label>
+                <input required type="number" name="stock" value={formData.stock} onChange={handleChange} className="w-full bg-[#0B0B0C] border border-[#24272A] rounded-lg px-4 py-2.5 text-[#F1F1EF] focus:outline-none focus:border-[#9C6644] transition-all font-mono" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#B8BAB7] mb-2">Catalog status</label>
+                <p className="rounded-lg border border-[#24272A] bg-[#0B0B0C] px-4 py-2.5 text-sm text-[#858884]">Calculated from stock availability</p>
+              </div>
+            </div>
+            
+            {/* Image Gallery Section */}
+            <div className="space-y-4 pt-2">
+               <div className="flex justify-between items-center border-b border-[#24272A] pb-2">
+                 <h3 className="text-sm font-semibold text-[#858884] uppercase tracking-wider">Product Gallery ({gallery.length}/10)</h3>
+                 {gallery.length < 10 && (
+                   <button type="button" onClick={addGalleryImage} className="text-xs flex items-center gap-1 bg-[#24272A] hover:bg-[#9C6644] text-[#F1F1EF] px-2 py-1 rounded transition-colors">
+                     <ImagePlus className="h-3 w-3" /> Add Image
+                   </button>
+                 )}
+               </div>
+
+               <div className="rounded-lg border border-dashed border-[#4A5568] bg-[#0B0B0C] p-4">
+                 <label className="block text-sm font-medium text-[#B8BAB7]">Change cover photo</label>
+                 <input type="file" accept="image/*" onChange={(e) => setCoverFile(e.target.files?.[0] || null)} className="mt-2 block w-full text-sm text-[#B8BAB7] file:mr-3 file:rounded-md file:border-0 file:bg-[#24272A] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#F1F3EF] hover:file:bg-[#9C6644]" />
+                 <p className="mt-2 text-xs text-[#858884]">{coverFile ? `Ready to upload: ${coverFile.name}` : 'Choose a new image to make it the primary cover.'}</p>
+               </div>
+               
+               <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                 {gallery.map((url, idx) => (
+                   <div key={idx} className="flex gap-2 items-start">
+                      <div className="grow">
+                         <input 
+                           type="text" 
+                           placeholder={`Image URL ${idx === 0 ? '(Primary Cover)' : ''}`} 
+                           value={url} 
+                           onChange={(e) => handleGalleryChange(idx, e.target.value)} 
+                           className="w-full bg-[#0B0B0C] border border-[#24272A] rounded-lg px-4 py-2 text-[#F1F1EF] focus:outline-none focus:border-[#9C6644] transition-all text-sm font-mono" 
+                         />
+                      </div>
+                      {gallery.length > 1 && (
+                        <button type="button" onClick={() => removeGalleryImage(idx)} className="p-2 text-[#858884] hover:text-red-400 bg-[#24272A] rounded-lg transition-colors shrink-0">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                   </div>
+                 ))}
+               </div>
+               
+               {/* Gallery Preview Row */}
+               <div className="flex gap-3 overflow-x-auto pt-2 pb-2 mt-4">
+                 {gallery.map((url, idx) => url ? (
+                   <div key={idx} className={`relative shrink-0 rounded overflow-hidden border-2 bg-white ${idx === 0 ? 'border-[#9C6644]' : 'border-[#24272A]'}`}>
+                     {idx === 0 && <span className="absolute top-0 left-0 bg-[#9C6644] text-white text-[9px] font-bold px-1 rounded-br">COVER</span>}
+                      <img src={url} alt={`Preview ${idx}`} className="product-photo h-20 w-20 object-cover" />
+                   </div>
+                 ) : null)}
+               </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-4 pt-6 border-t border-[#24272A]">
+          <button type="button" onClick={onCancel} className="px-6 py-2.5 rounded-lg font-medium text-[#B8BAB7] hover:bg-[#24272A] transition-colors">
+            Cancel
+          </button>
+          <button type="submit" disabled={isSaving} className="bg-[#9C6644] hover:bg-[#8A5A3C] text-white px-8 py-2.5 rounded-lg font-bold transition-colors shadow-lg disabled:cursor-not-allowed disabled:opacity-60">
+            {isSaving ? 'Uploading and committing...' : 'Commit to Database'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+const AdminOrders = () => {
+  const { orders, setOrders } = useContext(AppContext);
+  const [receiptOrder, setReceiptOrder] = useState(null);
+
+  const updateOrderStatus = (id, newStatus) => {
+    // In a real app, this triggers an audit log and customer notification
+    setOrders(prev => prev.map(o => o.id === id ? { ...o, status: newStatus } : o));
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Order Fulfillment</h1>
+        <p className="text-[#858884] mt-1 text-sm">Process customer orders and manage fulfillment status.</p>
+      </div>
+
+      <div className="bg-[#17191C] border border-[#24272A] rounded-xl overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-[#0B0B0C] text-[#858884] uppercase tracking-wider text-xs">
+              <tr>
+                <th className="px-6 py-4 font-medium">Order Details</th>
+                <th className="px-6 py-4 font-medium">Customer</th>
+                <th className="px-6 py-4 font-medium text-right">Total</th>
+                <th className="px-6 py-4 font-medium text-center">Status</th>
+                <th className="px-6 py-4 font-medium text-right">Admin Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#24272A]">
+              {orders.map(order => (
+                <tr key={order.id} className="hover:bg-[#1D2023] transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="font-mono text-[#F1F1EF] font-medium">{order.id}</div>
+                    <div className="text-xs text-[#858884] mt-1">
+                      {new Date(order.date).toLocaleDateString()} • {order.items.length} item(s)
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-[#F1F1EF]">
+                    {order.customerName}
+                  </td>
+                  <td className="px-6 py-4 text-right font-medium text-[#F1F1EF]">
+                    {formatMoney(order.total)}
+                  </td>
+                  <td className="px-6 py-4 text-center">
+                    <StatusBadge status={order.status} />
+                  </td>
+                  <td className="px-6 py-4 text-right flex items-center justify-end gap-3">
+                    <button 
+                      onClick={() => setReceiptOrder(order)} 
+                      title="Download Receipt"
+                      className="text-[#858884] hover:text-[#9C6644] transition-colors p-1"
+                    >
+                      <Download className="h-5 w-5" />
+                    </button>
+                    <select 
+                      value={order.status}
+                      onChange={(e) => updateOrderStatus(order.id, e.target.value)}
+                      className="bg-[#0B0B0C] border border-[#24272A] text-[#F1F1EF] text-xs rounded px-2 py-1 focus:outline-none focus:border-[#9C6644]"
+                    >
+                      <option value="PENDING">Pending</option>
+                      <option value="PROCESSING">Processing</option>
+                      <option value="SHIPPED">Shipped</option>
+                      <option value="DELIVERED">Delivered</option>
+                      <option value="CANCELLED">Cancelled</option>
+                    </select>
+                  </td>
+                </tr>
+              ))}
+              {orders.length === 0 && (
+                <tr>
+                   <td colSpan="5" className="px-6 py-12 text-center text-[#858884]">
+                      No orders found in the database.
+                   </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      
+      {/* Receipt Modal */}
+      {receiptOrder && (
+        <ReceiptModal order={receiptOrder} onClose={() => setReceiptOrder(null)} />
+      )}
+    </div>
+  );
+};
+
+const ReceiptModal = ({ order, onClose }) => {
+  return (
+    <>
+      <style>{`
+        @media print {
+          /* 1. Override layout locks that prevent scrolling/pagination */
+          html, body, #root, main, div {
+            height: auto !important;
+            overflow: visible !important;
+            position: static !important;
+          }
+          /* 2. Hide everything in the app */
+          body * { 
+            visibility: hidden; 
+          }
+          /* 3. Reveal ONLY the receipt content */
+          #receipt-modal-content, #receipt-modal-content * { 
+            visibility: visible; 
+          }
+          /* 4. Position it perfectly for the printed page */
+          #receipt-modal-content {
+            position: absolute; 
+            left: 0; 
+            top: 0; 
+            width: 100%; 
+            margin: 0; 
+            padding: 20px;
+            background: white !important; 
+            color: black !important; 
+            box-shadow: none !important;
+            border: none !important;
+          }
+          /* 5. Hide buttons from the printout */
+          .print-hidden { 
+            display: none !important; 
+          }
+        }
+      `}</style>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 transition-opacity">
+        <div 
+          id="receipt-modal-content"
+          className="bg-white max-w-lg w-full rounded-xl shadow-2xl overflow-hidden flex flex-col relative max-h-[90vh]"
+        >
+          {/* Header Controls (Hidden on Print) */}
+          <div className="print-hidden flex justify-between items-center p-4 border-b border-gray-200 bg-gray-50 shrink-0">
+            <h3 className="font-bold text-gray-800 flex items-center gap-2">
+              <Printer className="h-4 w-4" /> Order Receipt
+            </h3>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => window.print()} 
+                className="bg-[#9C6644] text-white px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 hover:bg-[#8A5A3C] transition-colors"
+              >
+                Print / PDF
+              </button>
+              <button onClick={onClose} className="p-2 text-gray-500 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Printable Receipt Content */}
+          <div className="p-8 relative overflow-y-auto bg-white text-[#111214] grow">
+            
+            {/* Watermark */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.04] overflow-hidden z-0">
+              <div className="rotate-[-30deg] scale-[2.5] md:scale-[3.5]">
+                <Logo dark={false} />
+              </div>
+            </div>
+
+            <div className="relative z-10">
+              {/* Receipt Header */}
+              <div className="flex flex-col items-center justify-center mb-8 border-b border-dashed border-gray-300 pb-8">
+                 <Logo dark={false} className="scale-125 mb-4" />
+                 <h2 className="text-xl font-bold uppercase tracking-widest text-gray-800">Electronic Receipt</h2>
+                 <p className="font-mono text-sm text-gray-500 mt-2">{order.id}</p>
+              </div>
+
+              {/* Order Info */}
+              <div className="space-y-2 mb-8 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Date Issued:</span>
+                  <span className="font-medium">{new Date(order.date).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Billed To:</span>
+                  <span className="font-medium">{order.customerName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Payment Status:</span>
+                  <span className="font-bold text-[#9C6644] uppercase">{order.status}</span>
+                </div>
+              </div>
+
+              {/* Items Table */}
+              <table className="w-full text-sm mb-8">
+                 <thead>
+                   <tr className="border-b-2 border-gray-800 text-gray-800 uppercase tracking-wider text-xs">
+                     <th className="text-left py-2 font-bold">Item Description</th>
+                     <th className="text-center py-2 font-bold w-16">Qty</th>
+                     <th className="text-right py-2 font-bold w-24">Amount</th>
+                   </tr>
+                 </thead>
+                 <tbody>
+                   {order.items.map((item, idx) => (
+                      <tr key={idx} className="border-b border-dashed border-gray-200">
+                        <td className="py-4 pr-4 font-medium text-gray-800">{item.name}</td>
+                        <td className="py-4 text-center text-gray-600">{item.quantity}</td>
+                        <td className="py-4 text-right font-medium text-gray-800">${(item.price * item.quantity).toFixed(2)}</td>
+                      </tr>
+                   ))}
+                 </tbody>
+              </table>
+
+              {/* Totals */}
+              <div className="flex justify-end text-sm">
+                 <div className="w-64 space-y-3">
+                   <div className="flex justify-between text-gray-600">
+                     <span>Subtotal</span>
+                     <span>${order.total.toFixed(2)}</span>
+                   </div>
+                   <div className="flex justify-between text-gray-600">
+                     <span>Tax & Delivery</span>
+                     <span>Included</span>
+                   </div>
+                   <div className="flex justify-between font-black text-lg pt-3 border-t-2 border-gray-800">
+                     <span>Total USD</span>
+                     <span>${order.total.toFixed(2)}</span>
+                   </div>
+                 </div>
+              </div>
+
+              {/* Footer */}
+              <div className="mt-16 text-center text-xs text-gray-500 space-y-1">
+                 <p className="font-bold text-gray-800">Thank you for your business!</p>
+                 <p>If you have any questions, contact us at wgnganga@gmail.com</p>
+                 <div className="pt-6 flex justify-center opacity-50 grayscale">
+                    <Logo />
+                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
+const StatusBadge = ({ status }) => {
+  const styles = {
+    PUBLISHED: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
+    DRAFT: 'bg-gray-500/10 text-gray-400 border border-gray-500/20',
+    ARCHIVED: 'bg-gray-800 text-gray-500 border border-gray-700',
+    OUT_OF_STOCK: 'bg-red-500/10 text-red-400 border border-red-500/20',
+    PENDING: 'bg-amber-500/10 text-amber-400 border border-amber-500/20',
+    PROCESSING: 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
+    SHIPPED: 'bg-purple-500/10 text-purple-400 border border-purple-500/20',
+    DELIVERED: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
+    CANCELLED: 'bg-red-500/10 text-red-400 border border-red-500/20',
+  };
+
+  const style = styles[status] || styles.DRAFT;
+  const label = status.replace(/_/g, ' ');
+
+  return (
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase ${style}`}>
+      {label}
+    </span>
+  );
+};
