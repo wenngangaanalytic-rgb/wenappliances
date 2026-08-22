@@ -150,14 +150,18 @@ const mapAuthUser = (authUser) => {
   };
 };
 
+const getRouteFromLocation = () => {
+  try {
+    const location = new URL(window.location.href);
+    if (location.searchParams.has('reset-password')) return '/reset-password';
+    return location.pathname.replace(/\/$/, '') || '/';
+  } catch {
+    return '/';
+  }
+};
+
 export default function App() {
-  const [currentRoute, setCurrentRoute] = useState(() => {
-    try {
-      return new URLSearchParams(window.location.search).has('reset-password') ? '/reset-password' : '/';
-    } catch {
-      return '/';
-    }
-  });
+  const [currentRoute, setCurrentRoute] = useState(getRouteFromLocation);
   const [user, setUser] = useState(null); // null = guest
   const [theme, setTheme] = useState(() => {
     try {
@@ -198,6 +202,12 @@ export default function App() {
       mounted = false;
       subscription.unsubscribe();
     };
+  }, []);
+
+  useEffect(() => {
+    const handleBrowserNavigation = () => setCurrentRoute(getRouteFromLocation());
+    window.addEventListener('popstate', handleBrowserNavigation);
+    return () => window.removeEventListener('popstate', handleBrowserNavigation);
   }, []);
 
   const loadProducts = async () => {
@@ -250,7 +260,17 @@ export default function App() {
 
   // Router logic
   const navigate = (path) => {
-    setCurrentRoute(path);
+    const nextLocation = new URL(path, window.location.origin);
+    const nextRoute = nextLocation.searchParams.has('reset-password')
+      ? '/reset-password'
+      : nextLocation.pathname.replace(/\/$/, '') || '/';
+    const nextUrl = `${nextLocation.pathname}${nextLocation.search}${nextLocation.hash}`;
+
+    if (window.location.pathname !== nextLocation.pathname || window.location.search !== nextLocation.search || window.location.hash !== nextLocation.hash) {
+      window.history.pushState({}, '', nextUrl);
+    }
+
+    setCurrentRoute(nextRoute);
     window.scrollTo(0, 0);
   };
 
@@ -1411,7 +1431,7 @@ const AdminLayout = ({ children }) => {
 
       {/* Main Content Area */}
       <main className="flex min-w-0 grow flex-col overflow-hidden md:h-screen">
-        <header className="relative flex min-h-16 shrink-0 items-center justify-between border-b border-[#24272A] bg-[#17191C]/80 px-4 backdrop-blur-md sm:px-8">
+        <header className="relative z-[110] flex min-h-16 shrink-0 items-center justify-between border-b border-[#24272A] bg-[#17191C]/80 px-4 backdrop-blur-md sm:px-8">
            <div className="flex min-w-0 items-center gap-2 text-sm text-[#858884]">
              <button type="button" onClick={() => setIsMobileNavOpen((open) => !open)} className="inline-flex shrink-0 items-center justify-center rounded-lg border border-[#4A5568]/40 bg-[#24272A] p-2 text-[#F1F1EF] hover:bg-[#30343A] md:hidden" aria-label={isMobileNavOpen ? 'Close administrator navigation' : 'Open administrator navigation'} aria-expanded={isMobileNavOpen}>
                {isMobileNavOpen ? <X className="h-4 w-4" aria-hidden="true" /> : <Menu className="h-4 w-4" aria-hidden="true" />}
@@ -1428,7 +1448,9 @@ const AdminLayout = ({ children }) => {
              </button>
            </div>
            {isMobileNavOpen && (
-             <nav className="absolute left-0 right-0 top-full z-50 border-b border-[#24272A] bg-[#17191C] p-3 shadow-xl md:hidden" aria-label="Administrator navigation">
+             <>
+               <button type="button" onClick={() => setIsMobileNavOpen(false)} className="fixed inset-x-0 bottom-0 top-16 z-[90] bg-black/50 md:hidden" aria-label="Close administrator navigation" />
+               <nav className="fixed inset-x-0 top-16 z-[100] max-h-[calc(100dvh-4rem)] overflow-y-auto border-b border-[#24272A] bg-[#17191C] p-3 shadow-2xl md:hidden" aria-label="Administrator navigation">
                <div className="grid gap-1">
                  {navItems.map((item) => {
                    const path = `/hq-operations/${item.id}`;
@@ -1447,7 +1469,8 @@ const AdminLayout = ({ children }) => {
                    );
                  })}
                </div>
-             </nav>
+               </nav>
+             </>
            )}
         </header>
         <div className="min-w-0 grow overflow-y-auto p-4 sm:p-8">
