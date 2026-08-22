@@ -310,15 +310,49 @@ export default function OrderTracking({ initialValues = null, accountMode = fals
   }, [initialEmail, lookupPurchases]);
 
   useEffect(() => {
-    const email = formData.email.trim();
-    if (!email || orders.length === 0) return undefined;
+    const email = formData.email.trim().toLowerCase();
+    if (!email) return undefined;
 
-    const refreshTimer = window.setInterval(() => {
+    let active = true;
+
+    const refreshOrders = () => {
+      if (!active || document.visibilityState === 'hidden') return;
       lookupPurchases({ email }, { silent: true });
-    }, 10000);
+    };
 
-    return () => window.clearInterval(refreshTimer);
-  }, [formData.email, orders.length, lookupPurchases]);
+    // Realtime provides the quickest update when an admin changes the order.
+    // The interval remains as a reliable fallback if Realtime is unavailable.
+    const ordersChannel = supabase
+      .channel(`customer-order-status-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'orders',
+          filter: `customer_email=eq.${email}`
+        },
+        refreshOrders
+      )
+      .subscribe();
+
+    const refreshTimer = window.setInterval(refreshOrders, 5000);
+    const handleFocus = () => refreshOrders();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshOrders();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      active = false;
+      window.clearInterval(refreshTimer);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      supabase.removeChannel(ordersChannel);
+    };
+  }, [formData.email, lookupPurchases]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
