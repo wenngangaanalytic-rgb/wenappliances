@@ -79,14 +79,14 @@ export default function AdminLogin({ onAuthenticated, onClose, theme = 'light', 
   };
 
   return (
-    <main className="motion-fade-in relative flex min-h-screen items-center justify-center bg-[#F4F3EF] px-4 py-10">
+    <main className="motion-fade-in relative flex min-h-screen min-h-[100dvh] w-full min-w-0 items-start justify-center overflow-x-hidden overflow-y-auto bg-[#F4F3EF] px-4 pb-6 pt-20 sm:items-center sm:py-10">
       {toggleTheme && (
         <button type="button" onClick={toggleTheme} aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} className="absolute right-4 top-4 inline-flex items-center gap-2 rounded-full border border-[#E5E4E0] bg-white px-3 py-2 text-xs font-semibold text-[#4A5568] transition hover:border-[#9C6644] hover:text-[#9C6644]">
           {theme === 'dark' ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}
           <span className="hidden sm:inline">{theme === 'dark' ? 'Light' : 'Dark'} theme</span>
         </button>
       )}
-      <section className="motion-fade-up relative w-full max-w-md rounded-2xl border border-[#E5E4E0] bg-white p-6 shadow-xl sm:p-8">
+      <section className="motion-fade-up relative box-border w-full min-w-0 max-w-md rounded-2xl border border-[#E5E4E0] bg-white p-6 shadow-xl sm:p-8">
         <button type="button" onClick={() => { onClose?.(); routerNavigate('/'); }} aria-label="Close administrator sign in" title="Back to home catalog" className="absolute right-4 top-4 rounded-full p-2 text-[#4A5568] transition hover:bg-[#F4F3EF] hover:text-[#111214] focus:outline-none focus:ring-2 focus:ring-[#9C6644]/40">
           <X className="h-5 w-5" aria-hidden="true" />
         </button>
