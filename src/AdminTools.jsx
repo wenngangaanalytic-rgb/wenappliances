@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from './supabaseClient';
-import { downloadCsvExport, downloadProtectedExport } from './secureExports';
+import { downloadProtectedExport, downloadXlsxExport } from './secureExports';
 
 const formatMoney = (amount) => new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -100,7 +100,7 @@ export default function AdminTools() {
   const exportDefinitions = {
     inventory: {
       title: 'Inventory records',
-      csvFilename: 'wenappliances-inventory.csv',
+      xlsxFilename: 'wenappliances-inventory.xlsx',
       protectedFilename: 'wenappliances-inventory-protected.html',
       columns: [
         { key: 'name', label: 'Product name' },
@@ -115,7 +115,7 @@ export default function AdminTools() {
     },
     orders: {
       title: 'Order records',
-      csvFilename: 'wenappliances-orders.csv',
+      xlsxFilename: 'wenappliances-orders.xlsx',
       protectedFilename: 'wenappliances-orders-protected.html',
       columns: [
         { key: 'id', label: 'Order ID' },
@@ -130,7 +130,7 @@ export default function AdminTools() {
     },
     members: {
       title: 'Member records',
-      csvFilename: 'wenappliances-members.csv',
+      xlsxFilename: 'wenappliances-members.xlsx',
       protectedFilename: 'wenappliances-members-protected.html',
       columns: [
         { key: 'full_name', label: 'Name' },
@@ -167,14 +167,14 @@ export default function AdminTools() {
     setExportError('');
     setExportingFormat(format);
     try {
-      if (format === 'csv') {
-        downloadCsvExport({
-          filename: pendingExport.csvFilename,
+      if (format === 'xlsx') {
+        downloadXlsxExport({
+          filename: pendingExport.xlsxFilename,
           title: pendingExport.title,
           columns: pendingExport.columns,
           rows: pendingExport.rows
         });
-        toast.success(`${pendingExport.title} CSV downloaded.`);
+        toast.success(`${pendingExport.title} XLSX workbook downloaded.`);
       } else {
         await downloadProtectedExport({
           filename: pendingExport.protectedFilename,
@@ -225,14 +225,14 @@ export default function AdminTools() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="font-semibold text-[#F1F3EF]">Download records</h2>
-              <p className="mt-1 text-sm text-[#858884]">Branded CSVs and PIN-protected reports for bookkeeping and stock planning.</p>
+              <p className="mt-1 text-sm text-[#858884]">Branded XLSX workbooks and PIN-protected reports for bookkeeping and stock planning.</p>
             </div>
             <Download className="h-5 w-5 text-[#9C6644]" />
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            <ExportButton label="Inventory CSV" onClick={() => openExportDialog('inventory')} disabled={loading || !products.length} />
-            <ExportButton label="Orders CSV" onClick={() => openExportDialog('orders')} disabled={loading || !orders.length} />
-            <ExportButton label="Members CSV" onClick={() => openExportDialog('members')} disabled={loading || !members.length} />
+            <ExportButton label="Inventory XLSX" onClick={() => openExportDialog('inventory')} disabled={loading || !products.length} />
+            <ExportButton label="Orders XLSX" onClick={() => openExportDialog('orders')} disabled={loading || !orders.length} />
+            <ExportButton label="Members XLSX" onClick={() => openExportDialog('members')} disabled={loading || !members.length} />
           </div>
           <p className="mt-4 text-xs leading-5 text-[#858884]">Each download asks for a 4-digit PIN or password. Choose the protected report if the file must ask for that PIN again when opened.</p>
         </div>
@@ -311,7 +311,7 @@ export default function AdminTools() {
             </div>
 
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              <button type="button" onClick={() => handleExport('csv')} disabled={Boolean(exportingFormat)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#4A5568]/60 bg-[#0B0B0C] px-4 py-3 text-sm font-semibold text-[#F1F3EF] transition hover:-translate-y-0.5 hover:border-[#9C6644] disabled:cursor-not-allowed disabled:opacity-50">{exportingFormat === 'csv' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Download CSV</button>
+              <button type="button" onClick={() => handleExport('xlsx')} disabled={Boolean(exportingFormat)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#4A5568]/60 bg-[#0B0B0C] px-4 py-3 text-sm font-semibold text-[#F1F3EF] transition hover:-translate-y-0.5 hover:border-[#9C6644] disabled:cursor-not-allowed disabled:opacity-50">{exportingFormat === 'xlsx' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Download XLSX</button>
               <button type="button" onClick={() => handleExport('protected')} disabled={Boolean(exportingFormat)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#9C6644] px-4 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-[#B8754B] disabled:cursor-not-allowed disabled:opacity-50">{exportingFormat === 'protected' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <LockKeyhole className="h-4 w-4" />} Protected report</button>
             </div>
           </div>

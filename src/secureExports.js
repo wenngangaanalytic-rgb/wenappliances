@@ -20,6 +20,189 @@ const csvCell = (value) => {
 
 const normalizeRows = (rows) => (Array.isArray(rows) ? rows : []).map((row) => ({ ...row }));
 
+const buildXlsxBlob = ({ title, columns, rows, generatedAt = new Date() }) => {
+  const xmlEscape = (value) => String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
+
+  const toExcelColumn = (index) => {
+    let value = index + 1;
+    let result = '';
+    while (value > 0) {
+      const remainder = (value - 1) % 26;
+      result = String.fromCharCode(65 + remainder) + result;
+      value = Math.floor((value - 1) / 26);
+    }
+    return result;
+  };
+
+  const isDateColumn = (key) => /(^|_)(created|updated|joined|placed|date|time)(_|$)/i.test(String(key || ''));
+  const toExcelDate = (value) => {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return (date.getTime() - Date.UTC(1899, 11, 30)) / 86400000;
+  };
+
+  const safeCellValue = (value) => {
+    const text = String(value ?? '');
+    return /^[=+\-@]/.test(text) ? `'${text}` : text;
+  };
+
+  const cellXml = (reference, value, styleId, dateValue = false) => {
+    if (value === null || value === undefined || value === '') return `<c r="${reference}" s="${styleId}"/>`;
+    if (dateValue && typeof value === 'number' && Number.isFinite(value)) return `<c r="${reference}" s="${styleId}" t="n"><v>${value}</v></c>`;
+    if (typeof value === 'number' && Number.isFinite(value)) return `<c r="${reference}" s="${styleId}" t="n"><v>${value}</v></c>`;
+    if (typeof value === 'boolean') return `<c r="${reference}" s="${styleId}" t="b"><v>${value ? 1 : 0}</v></c>`;
+    return `<c r="${reference}" s="${styleId}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(safeCellValue(value))}</t></is></c>`;
+  };
+
+  const rowXml = (rowNumber, cells) => `<row r="${rowNumber}">${cells.join('')}</row>`;
+  const normalizedColumns = Array.isArray(columns) && columns.length ? columns : [{ key: 'value', label: 'Value' }];
+  const normalizedRows = normalizeRows(rows);
+  const lastColumn = toExcelColumn(normalizedColumns.length - 1);
+  const lastRow = 8 + normalizedRows.length;
+  const createdLabel = generatedAt instanceof Date ? generatedAt.toLocaleString() : String(generatedAt || '');
+  const safeSheetName = String(title || 'WenAppliances Export').replace(/[\\/*?:\[\]]/g, '-').slice(0, 31) || 'Export';
+  const titleText = `WenAppliances - ${String(title || 'Administrative Export').replace(/\s+records?$/i, '')}`;
+
+  const metadataRows = [
+    rowXml(1, [cellXml('A1', titleText, 1)]),
+    rowXml(2, [cellXml('A2', 'CONFIDENTIAL ADMINISTRATIVE EXPORT', 2)]),
+    rowXml(3, []),
+    rowXml(4, [cellXml('A4', 'Report', 3), cellXml('B4', title, 4)]),
+    rowXml(5, [cellXml('A5', 'Generated', 3), cellXml('B5', createdLabel, 4)]),
+    rowXml(6, [cellXml('A6', 'Watermark', 3), cellXml('B6', 'WENAPPLIANCES', 2)]),
+    rowXml(7, [])
+  ];
+
+  const headerCells = normalizedColumns.map((column, index) => cellXml(`${toExcelColumn(index)}8`, column.label, 5));
+  const dataRows = normalizedRows.map((row, rowIndex) => {
+    const rowNumber = rowIndex + 9;
+    const alternate = rowIndex % 2 === 1;
+    const cells = normalizedColumns.map((column, columnIndex) => {
+      const key = column.key;
+      const rawValue = row?.[key];
+      const dateValue = isDateColumn(key) && rawValue;
+      const excelDate = dateValue ? toExcelDate(rawValue) : null;
+      const value = excelDate === null ? rawValue : excelDate;
+      const numeric = typeof value === 'number' || (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value)));
+      const currency = /price|amount|total|cost|revenue|value/i.test(String(key || ''));
+      const styleId = dateValue && excelDate !== null ? 9 : currency && numeric ? (alternate ? 11 : 8) : numeric ? (alternate ? 12 : 7) : (alternate ? 10 : 6);
+      return cellXml(`${toExcelColumn(columnIndex)}${rowNumber}`, value, styleId, dateValue && excelDate !== null);
+    });
+    return rowXml(rowNumber, cells);
+  });
+
+  const widths = normalizedColumns.map((column) => {
+    const longestValue = normalizedRows.reduce((longest, row) => Math.max(longest, String(row?.[column.key] ?? '').length), String(column.label || '').length);
+    return Math.min(36, Math.max(14, longestValue + 3));
+  });
+  const colsXml = widths.map((width, index) => `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`).join('');
+  const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
+  <dimension ref="A1:${lastColumn}${lastRow}"/>
+  <sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="8" topLeftCell="A9" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A9" sqref="A9"/></sheetView></sheetViews>
+  <sheetFormatPr defaultRowHeight="20"/>
+  <cols>${colsXml}</cols>
+  <sheetData>${metadataRows.join('')}${rowXml(8, headerCells)}${dataRows.join('')}</sheetData>
+  <autoFilter ref="A8:${lastColumn}${lastRow}"/>
+  <mergeCells count="1"><mergeCell ref="A1:${lastColumn}1"/></mergeCells>
+  <pageMargins left="0.35" right="0.35" top="0.5" bottom="0.5" header="0.2" footer="0.2"/>
+  <headerFooter><oddFooter>&amp;C WenAppliances - CONFIDENTIAL</oddFooter></headerFooter>
+</worksheet>`;
+
+  const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count="2"><numFmt numFmtId="164" formatCode="&quot;$&quot;#,##0.00"/><numFmt numFmtId="165" formatCode="yyyy-mm-dd hh:mm"/></numFmts>
+  <fonts count="4"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Aptos Display"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font></fonts>
+  <fills count="5"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF192734"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF9C6644"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF4EBE2"/><bgColor indexed="64"/></patternFill></fill></fills>
+  <borders count="2"><border/><border><left style="thin"><color rgb="FFE0D8CF"/></left><right style="thin"><color rgb="FFE0D8CF"/></right><top style="thin"><color rgb="FFE0D8CF"/></top><bottom style="thin"><color rgb="FFE0D8CF"/></bottom></border></borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="13">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+    <xf numFmtId="0" fontId="2" fillId="2" borderId="0" applyAlignment="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="2" borderId="0" applyAlignment="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="4" borderId="1" applyAlignment="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="4" borderId="1" applyAlignment="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="3" borderId="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="3" fontId="0" fillId="0" borderId="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="0" fillId="0" borderId="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="165" fontId="0" fillId="0" borderId="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="4" borderId="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="164" fontId="0" fillId="4" borderId="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="3" fontId="0" fillId="4" borderId="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+  </cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`;
+
+  const workbookXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews><sheets><sheet name="${xmlEscape(safeSheetName)}" sheetId="1" r:id="rId1"/></sheets></workbook>`;
+  const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`;
+  const rootRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
+  const workbookRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
+  const appXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>WenAppliances</Application></Properties>`;
+  const coreXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>${xmlEscape(title || 'WenAppliances Export')}</dc:title><dc:creator>WenAppliances</dc:creator></cp:coreProperties>`;
+
+  const encoder = new TextEncoder();
+  const concatBytes = (chunks) => {
+    const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const output = new Uint8Array(total);
+    let offset = 0;
+    chunks.forEach((chunk) => {
+      output.set(chunk, offset);
+      offset += chunk.length;
+    });
+    return output;
+  };
+  const u16 = (value) => new Uint8Array([value & 255, (value >>> 8) & 255]);
+  const u32 = (value) => new Uint8Array([value & 255, (value >>> 8) & 255, (value >>> 16) & 255, (value >>> 24) & 255]);
+  const crc32 = (bytes) => {
+    let crc = 0xffffffff;
+    for (const byte of bytes) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  };
+  const now = new Date();
+  const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | Math.floor(now.getSeconds() / 2);
+  const dosDate = ((Math.max(1980, now.getFullYear()) - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  const parts = [
+    ['[Content_Types].xml', contentTypesXml],
+    ['_rels/.rels', rootRelsXml],
+    ['docProps/app.xml', appXml],
+    ['docProps/core.xml', coreXml],
+    ['xl/workbook.xml', workbookXml],
+    ['xl/_rels/workbook.xml.rels', workbookRelsXml],
+    ['xl/styles.xml', stylesXml],
+    ['xl/worksheets/sheet1.xml', sheetXml]
+  ].map(([name, content]) => ({ name, nameBytes: encoder.encode(name), bytes: encoder.encode(content) }));
+  const localChunks = [];
+  const centralChunks = [];
+  let offset = 0;
+  parts.forEach((part) => {
+    const checksum = crc32(part.bytes);
+    const localHeader = concatBytes([u32(0x04034b50), u16(20), u16(0), u16(0), u16(dosTime), u16(dosDate), u32(checksum), u32(part.bytes.length), u32(part.bytes.length), u16(part.nameBytes.length), u16(0), part.nameBytes]);
+    localChunks.push(localHeader, part.bytes);
+    const centralHeader = concatBytes([u32(0x02014b50), u16(20), u16(20), u16(0), u16(0), u16(dosTime), u16(dosDate), u32(checksum), u32(part.bytes.length), u32(part.bytes.length), u16(part.nameBytes.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset), part.nameBytes]);
+    centralChunks.push(centralHeader);
+    offset += localHeader.length + part.bytes.length;
+  });
+  const centralDirectory = concatBytes(centralChunks);
+  const endRecord = concatBytes([u32(0x06054b50), u16(0), u16(0), u16(parts.length), u16(parts.length), u32(centralDirectory.length), u32(offset), u16(0)]);
+  return new Blob([concatBytes([...localChunks, centralDirectory, endRecord])], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+};
+
+export { buildXlsxBlob };
+
 export const buildCsv = ({ title, columns, rows, generatedAt = new Date() }) => {
   const metadata = [
     ['WenAppliances'],
@@ -51,6 +234,10 @@ const downloadBlob = (filename, blob) => {
 export const downloadCsvExport = ({ filename, title, columns, rows }) => {
   const csv = buildCsv({ title, columns, rows });
   downloadBlob(filename, new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }));
+};
+
+export const downloadXlsxExport = ({ filename, title, columns, rows }) => {
+  downloadBlob(filename, buildXlsxBlob({ title, columns, rows }));
 };
 
 const bytesToBase64 = (bytes) => {
@@ -106,7 +293,7 @@ export const buildProtectedReport = async ({ title, columns, rows, pin, generate
   const encrypted = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
     key,
-    new TextEncoder().encode(JSON.stringify({ columns, rows: normalizeRows(rows), csv }))
+    new TextEncoder().encode(JSON.stringify({ title, generatedAt: generatedAt instanceof Date ? generatedAt.toLocaleString() : String(generatedAt || ''), columns, rows: normalizeRows(rows), csv }))
   );
 
   const payload = {
@@ -181,13 +368,14 @@ export const buildProtectedReport = async ({ title, columns, rows, pin, generate
           <p id="unlock-error" class="error" role="alert"></p>
         </section>
         <section id="report-panel" class="hidden">
-          <div class="report-tools"><p>Unlocked locally in this browser. Keep this file in a private location.</p><button id="csv-download" type="button">Download CSV</button></div>
+          <div class="report-tools"><p>Unlocked locally in this browser. Keep this file in a private location.</p><button id="xlsx-download" type="button">Download XLSX</button></div>
           <div class="table-wrap"><table><thead id="report-head"></thead><tbody id="report-body"></tbody></table></div>
         </section>
       </div>
     </section>
   </main>
   <script>
+    const buildXlsxBlob = ${buildXlsxBlob.toString()};
     const payload = ${payloadLiteral};
     const decodeBase64 = (value) => Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
     const deriveKey = async (pin, salt) => {
@@ -221,13 +409,13 @@ export const buildProtectedReport = async ({ title, columns, rows, pin, generate
         error.textContent = 'That PIN could not unlock this report. Please try again.';
       }
     });
-    document.getElementById('csv-download').addEventListener('click', () => {
+    document.getElementById('xlsx-download').addEventListener('click', () => {
       if (!report) return;
-      const blob = new Blob(['\\ufeff' + report.csv], { type: 'text/csv;charset=utf-8' });
+      const blob = buildXlsxBlob({ title: report.title || 'WenAppliances Export', generatedAt: report.generatedAt || new Date().toISOString(), columns: report.columns, rows: report.rows });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = 'wenappliances-unlocked-export.csv';
+      link.download = 'wenappliances-unlocked-export.xlsx';
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
