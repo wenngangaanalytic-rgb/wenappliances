@@ -160,7 +160,10 @@ const getRouteFromLocation = () => {
   }
 };
 
+const isAdminApp = import.meta.env.MODE === 'admin';
+
 export default function App() {
+  const adminBasePath = isAdminApp ? '' : '/hq-operations';
   const [currentRoute, setCurrentRoute] = useState(getRouteFromLocation);
   const [user, setUser] = useState(null); // null = guest
   const [theme, setTheme] = useState(() => {
@@ -445,6 +448,7 @@ export default function App() {
     cart, addToCart, updateCartQty, clearCart, cartTotal, cartItemCount, isCartOpen, setIsCartOpen,
     placeOrder,
     navigate, currentRoute,
+    isAdminApp, adminBasePath,
     theme, toggleTheme,
     searchQuery, setSearchQuery,
     activeCategory, setActiveCategory
@@ -452,13 +456,16 @@ export default function App() {
 
   // --- ROUTER DISPATCHER ---
   const renderRoute = () => {
-    // Admin Routes
-    if (currentRoute.startsWith('/hq-operations')) {
+    // The admin deployment has its own root and routes. The storefront never renders admin UI.
+    if (isAdminApp) {
       if (!user || user.role !== 'SUPER_ADMIN') {
-        return <SecureAdminLogin theme={theme} toggleTheme={toggleTheme} onAuthenticated={() => navigate('/hq-operations/dashboard')} onClose={() => navigate('/')} />;
+        return <SecureAdminLogin theme={theme} toggleTheme={toggleTheme} onAuthenticated={() => navigate('/dashboard')} onClose={() => navigate('/')} />;
       }
       return <AdminLayout><AdminRouteErrorBoundary key={currentRoute}><AdminRouter route={currentRoute} /></AdminRouteErrorBoundary></AdminLayout>;
     }
+
+    // Legacy admin URLs on the storefront are intentionally not exposed.
+    if (currentRoute.startsWith('/hq-operations')) return <StoreLayout><StoreHome /></StoreLayout>;
 
     // Storefront Routes
     return (
@@ -572,9 +579,9 @@ const StoreLayout = ({ children }) => {
       <footer className="bg-[#111214] text-[#F1F1EF] py-12 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-4 gap-8">
           <div>
-            <button type="button" onClick={() => navigate('/hq-operations')} className="mb-4 block text-left" aria-label="Administrator access">
+            <div className="mb-4 block text-left" aria-label="WenAppliances">
               <Logo dark={true} />
-            </button>
+            </div>
             <p className="text-[#B8BAB7] text-sm leading-relaxed">Premium electronics and appliances for the modern lifestyle. Quality assured.</p>
           </div>
           <div>
@@ -1343,9 +1350,10 @@ const AdminLogin = () => {
 };
 
 const AdminLayout = ({ children }) => {
-  const { user, logout, navigate, currentRoute, theme, toggleTheme } = useContext(AppContext);
+  const { user, logout, navigate, currentRoute, theme, toggleTheme, adminBasePath } = useContext(AppContext);
   const [activeOrderCount, setActiveOrderCount] = useState(0);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const storefrontUrl = import.meta.env.VITE_STOREFRONT_URL || '/';
 
   useEffect(() => {
     let active = true;
@@ -1392,8 +1400,9 @@ const AdminLayout = ({ children }) => {
         </div>
         <nav className="grow py-6 px-3 space-y-1">
           {navItems.map(item => {
-            const path = `/hq-operations/${item.id}`;
-            const active = currentRoute.includes(item.id) || (currentRoute === '/hq-operations' && item.id === 'dashboard');
+            const path = `${adminBasePath}/${item.id}` || `/${item.id}`;
+            const adminRoot = adminBasePath ? currentRoute === adminBasePath : currentRoute === '/';
+            const active = currentRoute.includes(item.id) || (adminRoot && item.id === 'dashboard');
             return (
               <button 
                 key={item.id}
@@ -1442,10 +1451,10 @@ const AdminLayout = ({ children }) => {
            </div>
            <div className="flex items-center gap-3">
              <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
-             <button onClick={() => navigate('/')} className="text-xs bg-[#24272A] hover:bg-[#1D2023] px-3 py-1.5 rounded border border-[#4A5568]/30 transition-colors">
+             <a href={storefrontUrl} className="text-xs bg-[#24272A] hover:bg-[#1D2023] px-3 py-1.5 rounded border border-[#4A5568]/30 transition-colors">
                <span className="hidden sm:inline">View Public Storefront</span>
                <span className="sm:hidden">Store</span>
-             </button>
+             </a>
            </div>
            {isMobileNavOpen && (
              <>
@@ -1453,8 +1462,9 @@ const AdminLayout = ({ children }) => {
                <nav className="fixed inset-x-0 top-16 z-[100] max-h-[calc(100dvh-4rem)] overflow-y-auto border-b border-[#24272A] bg-[#17191C] p-3 shadow-2xl md:hidden" aria-label="Administrator navigation">
                <div className="grid gap-1">
                  {navItems.map((item) => {
-                   const path = `/hq-operations/${item.id}`;
-                   const active = currentRoute.includes(item.id) || (currentRoute === '/hq-operations' && item.id === 'dashboard');
+                   const path = `${adminBasePath}/${item.id}` || `/${item.id}`;
+                   const adminRoot = adminBasePath ? currentRoute === adminBasePath : currentRoute === '/';
+                   const active = currentRoute.includes(item.id) || (adminRoot && item.id === 'dashboard');
                    return (
                      <button
                        key={item.id}
@@ -1492,13 +1502,13 @@ const AdminRouter = ({ route }) => {
 };
 
 const AdminNewProduct = () => {
-  const { navigate, loadProducts } = useContext(AppContext);
+  const { navigate, loadProducts, adminBasePath } = useContext(AppContext);
 
   return (
     <SecureProductEditor
       onSaved={async () => {
         await loadProducts();
-        navigate('/hq-operations/products');
+        navigate(`${adminBasePath}/products` || '/products');
       }}
     />
   );
@@ -1624,7 +1634,7 @@ const StatCard = ({ title, value, icon: Icon, trend, color = "text-[#F1F1EF]" })
 );
 
 const AdminProducts = () => {
-  const { products, saveProduct, deleteProduct, productsLoading, productsError, navigate } = useContext(AppContext);
+  const { products, saveProduct, deleteProduct, productsLoading, productsError, navigate, adminBasePath } = useContext(AppContext);
   const [editingProduct, setEditingProduct] = useState(null);
   const [saveError, setSaveError] = useState('');
   const [deletingProductId, setDeletingProductId] = useState(null);
@@ -1683,7 +1693,7 @@ const AdminProducts = () => {
           <p className="text-[#858884] mt-1 text-sm">Manage inventory, pricing, and catalog metadata.</p>
         </div>
         <button 
-          onClick={() => { setSaveError(''); navigate('/hq-operations/new-product'); }}
+          onClick={() => { setSaveError(''); navigate(`${adminBasePath}/new-product` || '/new-product'); }}
           className="bg-[#9C6644] hover:bg-[#8A5A3C] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
         >
           <Plus className="h-4 w-4" /> New Product

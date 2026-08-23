@@ -1,6 +1,6 @@
 {
-  "buildCommand": "npm run build:storefront",
-  "outputDirectory": "dist",
+  "buildCommand": "npm run build:admin",
+  "outputDirectory": "dist/admin",
   "rewrites": [
     {
       "source": "/(.*)",

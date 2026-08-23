@@ -4,8 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "vite --mode storefront",
+    "dev:storefront": "vite --mode storefront",
+    "dev:admin": "vite --mode admin",
+    "build": "npm run build:storefront",
+    "build:storefront": "vite build --mode storefront",
+    "build:admin": "vite build --mode admin",
     "preview": "vite preview"
   },
   "dependencies": {
