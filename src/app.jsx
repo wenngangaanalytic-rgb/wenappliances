@@ -20,6 +20,9 @@ import AccountMenu from './AccountMenu';
 import ResetPassword from './ResetPassword';
 import PresenceTracker from './PresenceTracker';
 import PwaInstallPrompt from './PwaInstallPrompt';
+import OrderNotificationPrompt from './OrderNotificationPrompt';
+import { AdminOrderNotificationWatcher, CustomerOrderNotificationWatcher } from './OrderNotificationWatchers';
+import { rememberOrderForNotifications } from './browserNotifications';
 import { SUPPORT_EMAIL, SUPPORT_PHONE } from './businessInfo';
 import {
   ADMIN_PORTAL_ROLE_MESSAGE,
@@ -525,7 +528,10 @@ export default function App() {
         {currentRoute === '/' && <StoreHome />}
         {currentRoute === '/products' && <LiveApplianceCatalog onProductClick={(productId) => navigate(`/product/${productId}`)} />}
         {currentRoute.startsWith('/product/') && <StoreProductDetail id={currentRoute.split('/')[2]} />}
-        {currentRoute === '/checkout' && <Checkout cart={cart} cartTotal={cartTotal} clearCart={clearCart} navigate={navigate} onOrderPlaced={({ orderId, email }) => setTrackingPrefill({ orderId, email })} />}
+        {currentRoute === '/checkout' && <Checkout cart={cart} cartTotal={cartTotal} clearCart={clearCart} navigate={navigate} onOrderPlaced={({ orderId, email }) => {
+          rememberOrderForNotifications(orderId, email);
+          setTrackingPrefill({ orderId, email });
+        }} />}
         {currentRoute === '/reset-password' && <ResetPassword navigate={navigate} />}
         {currentRoute === '/my-orders' && <OrderTracking initialValues={{ email: user?.email || '' }} accountMode />}
         {currentRoute.startsWith('/track-order') && <OrderTracking initialValues={{ email: trackingPrefill?.email || user?.email || '' }} />}
@@ -539,6 +545,8 @@ export default function App() {
         {renderRoute()}
       </div>
       {!isAdminApp && <PwaInstallPrompt />}
+      <OrderNotificationPrompt isAdmin={isAdminApp} active={!isAdminApp || user?.role === 'SUPER_ADMIN'} />
+      {isAdminApp ? <AdminOrderNotificationWatcher user={user} /> : <CustomerOrderNotificationWatcher user={user} refreshKey={trackingPrefill?.orderId} />}
       <PresenceTracker user={user} />
     </AppContext.Provider>
   );

@@ -41,10 +41,11 @@ createRoot(document.getElementById('root')).render(
   </React.StrictMode>
 );
 
-if (import.meta.env.MODE === 'storefront' && 'serviceWorker' in navigator) {
+if ((isAdminBuild || isAdminHost || import.meta.env.MODE === 'storefront') && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/service-worker.js').catch((error) => {
-      console.warn('WenAppliances offline shell could not be registered.', error);
+    const serviceWorkerPath = isAdminBuild || isAdminHost ? '/admin-service-worker.js' : '/service-worker.js';
+    navigator.serviceWorker.register(serviceWorkerPath).catch((error) => {
+      console.warn('WenAppliances notification service worker could not be registered.', error);
     });
   });
 }
