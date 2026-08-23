@@ -16,6 +16,7 @@ import OrderTracking from './OrderTracking';
 import SupabaseAdminOrders from './AdminOrders';
 import SupabaseAdminMembers from './AdminMembers';
 import AdminTools from './AdminTools';
+import AdminPasskeySettings from './AdminPasskeySettings';
 import AccountMenu from './AccountMenu';
 import ResetPassword from './ResetPassword';
 import PresenceTracker from './PresenceTracker';
@@ -1465,6 +1466,7 @@ const AdminLayout = ({ children }) => {
              <span className="sm:hidden">Admin</span>
            </div>
            <div className="flex items-center gap-3">
+             <AdminPasskeySettings user={user} />
              <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
              <a href={storefrontUrl} className="text-xs bg-[#24272A] hover:bg-[#1D2023] px-3 py-1.5 rounded border border-[#4A5568]/30 transition-colors">
                <span className="hidden sm:inline">View Public Storefront</span>

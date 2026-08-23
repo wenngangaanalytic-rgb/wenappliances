@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Eye, EyeOff, Lock, Moon, Sun, X } from 'lucide-react';
+import { Eye, EyeOff, Fingerprint, Lock, Moon, Sun, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 import { isSuperAdminUser } from './authSecurity';
@@ -14,10 +14,20 @@ export default function AdminLogin({ onAuthenticated, onClose, theme = 'light', 
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutSeconds, setLockoutSeconds] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isPasskeySubmitting, setIsPasskeySubmitting] = useState(false);
+  const [passkeySupported, setPasskeySupported] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   const isLockedOut = lockoutSeconds > 0;
+
+  useEffect(() => {
+    setPasskeySupported(
+      typeof window !== 'undefined'
+      && 'PublicKeyCredential' in window
+      && typeof supabase.auth.signInWithPasskey === 'function'
+    );
+  }, []);
 
   useEffect(() => {
     if (!isLockedOut) return undefined;
@@ -90,6 +100,42 @@ export default function AdminLogin({ onAuthenticated, onClose, theme = 'light', 
     onAuthenticated?.(data.session);
   };
 
+  const handlePasskeySignIn = async () => {
+    if (isLockedOut || isSubmitting || isPasskeySubmitting) return;
+
+    setIsPasskeySubmitting(true);
+    setError('');
+
+    try {
+      const { data, error: passkeyError } = await supabase.auth.signInWithPasskey();
+      if (passkeyError) throw passkeyError;
+
+      const { data: verifiedUserData, error: verifiedUserError } = await supabase.auth.getUser();
+      const verifiedUser = verifiedUserData?.user || data?.user;
+      if (verifiedUserError || !isSuperAdminUser(verifiedUser)) {
+        await supabase.auth.signOut();
+        throw new Error('This passkey is not registered for the Admin Wen super administrator.');
+      }
+
+      setFailedAttempts(0);
+      setLockoutSeconds(0);
+      onAuthenticated?.(data?.session);
+    } catch (passkeyError) {
+      const nextFailedAttempts = failedAttempts + 1;
+
+      if (nextFailedAttempts >= MAX_FAILED_ATTEMPTS) {
+        setFailedAttempts(0);
+        setLockoutSeconds(LOCKOUT_DURATION_SECONDS);
+        setError(`Too many failed attempts. Try again in ${LOCKOUT_DURATION_SECONDS} seconds.`);
+      } else {
+        setFailedAttempts(nextFailedAttempts);
+        setError(`${passkeyError.message || 'Passkey sign-in was not completed.'} ${MAX_FAILED_ATTEMPTS - nextFailedAttempts} attempt(s) remaining.`);
+      }
+    } finally {
+      setIsPasskeySubmitting(false);
+    }
+  };
+
   return (
     <main className="motion-fade-in relative flex min-h-screen min-h-[100dvh] w-full min-w-0 items-start justify-center overflow-x-hidden overflow-y-auto bg-[#F4F3EF] px-4 pb-6 pt-20 sm:items-center sm:py-10">
       {toggleTheme && (
@@ -147,6 +193,17 @@ export default function AdminLogin({ onAuthenticated, onClose, theme = 'light', 
             {isSubmitting ? 'Signing in...' : isLockedOut ? `Locked for ${lockoutSeconds}s` : 'Sign in'}
           </button>
         </form>
+
+        {passkeySupported && (
+          <div className="mt-5 border-t border-[#E5E4E0] pt-5">
+            <p className="mb-3 text-center text-xs text-[#4A5568]">Or use your device unlock</p>
+            <button type="button" onClick={handlePasskeySignIn} disabled={isSubmitting || isPasskeySubmitting || isLockedOut} className="flex w-full items-center justify-center gap-2 rounded-lg border border-[#2563EB]/40 bg-[#EFF6FF] px-4 py-3 font-semibold text-[#1D4ED8] transition-all duration-200 hover:-translate-y-1 hover:bg-[#DBEAFE] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none">
+              {isPasskeySubmitting ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#1D4ED8] border-t-transparent" aria-hidden="true" /> : <Fingerprint className="h-5 w-5" aria-hidden="true" />}
+              {isPasskeySubmitting ? 'Waiting for device unlock...' : 'Use Face ID, fingerprint, or PIN'}
+            </button>
+            <p className="mt-2 text-center text-[11px] leading-5 text-[#858884]">First register a passkey from inside Admin Wen after signing in with your password.</p>
+          </div>
+        )}
       </section>
     </main>
   );
