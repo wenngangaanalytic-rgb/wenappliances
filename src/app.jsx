@@ -15,6 +15,7 @@ import Checkout from './Checkout';
 import OrderTracking from './OrderTracking';
 import SupabaseAdminOrders from './AdminOrders';
 import SupabaseAdminMembers from './AdminMembers';
+import AdminTools from './AdminTools';
 import AccountMenu from './AccountMenu';
 import ResetPassword from './ResetPassword';
 import PresenceTracker from './PresenceTracker';
@@ -1389,6 +1390,7 @@ const AdminLayout = ({ children }) => {
     { id: 'products', label: 'Inventory & Products', icon: Package },
     { id: 'orders', label: 'Order Management', icon: ShoppingCart },
     { id: 'members', label: 'Members', icon: Users },
+    { id: 'tools', label: 'Admin Tools', icon: Settings },
   ];
 
   return (
@@ -1496,6 +1498,7 @@ const AdminLayout = ({ children }) => {
 const AdminRouter = ({ route }) => {
   if (route.includes('new-product')) return <AdminNewProduct />;
   if (route.includes('members')) return <SupabaseAdminMembers />;
+  if (route.includes('tools')) return <AdminTools />;
   if (route.includes('products')) return <AdminProducts />;
   if (route.includes('orders')) return <SupabaseAdminOrders />;
   return <AdminDashboard />;
@@ -1514,103 +1517,112 @@ const AdminNewProduct = () => {
   );
 };
 
-const AdminDashboard = () => {
-  const { orders, products } = useContext(AppContext);
-  
-  // Analytics Calculations
-  const totalRevenue = orders.filter(o => o.status !== 'CANCELLED').reduce((sum, o) => sum + o.total, 0);
-  const totalOrders = orders.length;
-  const pendingOrders = orders.filter(o => o.status === 'PENDING').length;
-  
-  // Profit Calculation (Revenue - COGS)
-  const totalProfit = orders.filter(o => o.status !== 'CANCELLED').reduce((sum, order) => {
-     let orderProfit = 0;
-     order.items.forEach(item => {
-        const product = products.find(p => p.id === item.productId);
-        if (product) {
-           orderProfit += (item.price - product.cost) * item.quantity;
-        }
-     });
-     return sum + orderProfit;
-  }, 0);
+const normalizeAdminOrderStatus = (status) => {
+  const value = String(status || 'Pending').trim().toLowerCase();
+  if (value.includes('cancel')) return 'CANCELLED';
+  if (value.includes('complete') || value.includes('deliver') || value.includes('picked')) return 'COMPLETED';
+  if (value.includes('confirm') || value.includes('process')) return 'CONFIRMED';
+  return 'PENDING';
+};
 
-  const lowStockCount = products.filter(p => p.stock < 5).length;
+const AdminDashboard = () => {
+  const { navigate, adminBasePath } = useContext(AppContext);
+  const [orders, setOrders] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [lastUpdated, setLastUpdated] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadDashboard = async () => {
+      const [ordersResult, productsResult] = await Promise.all([
+        supabase.from('orders').select('id, customer_name, total_amount, status, created_at').order('created_at', { ascending: false }),
+        supabase.from('products').select('id, name, sku, stock, price, status').order('name')
+      ]);
+
+      if (!active) return;
+
+      if (ordersResult.error || productsResult.error) {
+        setError(ordersResult.error?.message || productsResult.error?.message || 'Unable to load dashboard data.');
+      } else {
+        setError('');
+      }
+
+      setOrders(ordersResult.data ?? []);
+      setProducts(productsResult.data ?? []);
+      setLastUpdated(new Date());
+      setLoading(false);
+    };
+
+    loadDashboard();
+    const refreshTimer = window.setInterval(loadDashboard, 30000);
+    const dashboardChannel = supabase
+      .channel(`admin-dashboard-${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, loadDashboard)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, loadDashboard)
+      .subscribe();
+
+    return () => {
+      active = false;
+      window.clearInterval(refreshTimer);
+      supabase.removeChannel(dashboardChannel);
+    };
+  }, []);
+
+  const activeOrders = orders.filter((order) => normalizeAdminOrderStatus(order.status) !== 'CANCELLED');
+  const completedOrders = activeOrders.filter((order) => normalizeAdminOrderStatus(order.status) === 'COMPLETED');
+  const pendingOrders = activeOrders.filter((order) => normalizeAdminOrderStatus(order.status) === 'PENDING');
+  const collectedRevenue = completedOrders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
+  const pendingValue = pendingOrders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
+  const lowStockProducts = products.filter((product) => Number(product.stock || 0) <= 10);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Executive Dashboard</h1>
-        <p className="text-[#858884] mt-1 text-sm">Overview of operations and financial metrics.</p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Executive Dashboard</h1>
+          <p className="mt-1 text-sm text-[#858884]">Live operational figures from your Supabase database.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {lastUpdated && <span className="text-xs text-[#858884]">Updated {lastUpdated.toLocaleTimeString()}</span>}
+          <button type="button" onClick={() => navigate(`${adminBasePath}/tools` || '/tools')} className="inline-flex items-center gap-2 rounded-lg bg-[#9C6644] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#8A5A3C]"><Settings className="h-4 w-4" /> Admin tools</button>
+        </div>
       </div>
 
-      <div className="motion-stagger grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="Gross Revenue" value={formatMoney(totalRevenue)} icon={DollarSign} />
-        <StatCard title="Net Profit (Est)" value={formatMoney(totalProfit)} icon={TrendingUp} color="text-emerald-400" />
-        <StatCard title="Total Orders" value={totalOrders} icon={ShoppingCart} />
-        <StatCard 
-          title="Attention Needed" 
-          value={`${pendingOrders} Pending | ${lowStockCount} Low Stock`}
-          icon={AlertTriangle} 
-          color="text-amber-400" 
-        />
+      {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300" role="alert">{error}</div>}
+
+      <div className="motion-stagger grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <StatCard title="Collected Revenue" value={formatMoney(collectedRevenue)} icon={DollarSign} />
+        <StatCard title="Pending Order Value" value={formatMoney(pendingValue)} icon={TrendingUp} color="text-emerald-400" />
+        <StatCard title="Active Orders" value={activeOrders.length} icon={ShoppingCart} />
+        <StatCard title="Attention Needed" value={`${pendingOrders.length} Pending | ${lowStockProducts.length} Low Stock`} icon={AlertTriangle} color="text-amber-400" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-         {/* Recent Orders Panel */}
-         <div className="col-span-2 bg-[#17191C] border border-[#24272A] rounded-xl overflow-hidden shadow-sm">
-            <div className="p-5 border-b border-[#24272A] flex justify-between items-center">
-               <h3 className="font-semibold text-[#F1F1EF]">Recent Transactions</h3>
-            </div>
-            <div className="overflow-x-auto">
-               <table className="w-full text-left text-sm">
-                 <thead className="bg-[#0B0B0C] text-[#858884] uppercase tracking-wider text-xs">
-                   <tr>
-                     <th className="px-5 py-3 font-medium">Order ID</th>
-                     <th className="px-5 py-3 font-medium">Customer</th>
-                     <th className="px-5 py-3 font-medium">Amount</th>
-                     <th className="px-5 py-3 font-medium">Status</th>
-                   </tr>
-                 </thead>
-                 <tbody className="divide-y divide-[#24272A]">
-                   {orders.slice(0, 5).map(order => (
-                     <tr key={order.id} className="hover:bg-[#1D2023] transition-colors">
-                       <td className="px-5 py-4 font-mono text-[#B8BAB7]">{order.id}</td>
-                       <td className="px-5 py-4 text-[#F1F1EF]">{order.customerName}</td>
-                       <td className="px-5 py-4 font-medium text-[#F1F1EF]">{formatMoney(order.total)}</td>
-                       <td className="px-5 py-4">
-                         <StatusBadge status={order.status} />
-                       </td>
-                     </tr>
-                   ))}
-                 </tbody>
-               </table>
-            </div>
-         </div>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="col-span-2 overflow-hidden rounded-xl border border-[#24272A] bg-[#17191C] shadow-sm">
+          <div className="flex items-center justify-between border-b border-[#24272A] p-5"><div><h3 className="font-semibold text-[#F1F3EF]">Recent Transactions</h3><p className="mt-1 text-xs text-[#858884]">Completed, confirmed, and pending orders.</p></div><button type="button" onClick={() => navigate(`${adminBasePath}/orders` || '/orders')} className="text-xs font-semibold text-[#9C6644] hover:underline">Open orders</button></div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[620px] text-left text-sm">
+              <thead className="bg-[#0B0B0C] text-xs uppercase tracking-wider text-[#858884]"><tr><th className="px-5 py-3 font-medium">Order ID</th><th className="px-5 py-3 font-medium">Customer</th><th className="px-5 py-3 font-medium">Amount</th><th className="px-5 py-3 font-medium">Status</th></tr></thead>
+              <tbody className="divide-y divide-[#24272A]">
+                {orders.slice(0, 5).map((order) => <tr key={order.id} className="transition-colors hover:bg-[#1D2023]"><td className="px-5 py-4 font-mono text-xs text-[#B8BAB7]">{order.id}</td><td className="px-5 py-4 text-[#F1F1EF]">{order.customer_name || 'Unnamed customer'}</td><td className="px-5 py-4 font-medium text-[#F1F1EF]">{formatMoney(order.total_amount)}</td><td className="px-5 py-4"><StatusBadge status={normalizeAdminOrderStatus(order.status)} /></td></tr>)}
+                {!loading && !orders.length && <tr><td colSpan="4" className="p-8 text-center text-sm text-[#858884]">No orders found in the database.</td></tr>}
+                {loading && <tr><td colSpan="4" className="p-8 text-center text-sm text-[#858884]">Loading live orders...</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-         {/* Inventory Alerts Panel */}
-         <div className="bg-[#17191C] border border-[#24272A] rounded-xl overflow-hidden shadow-sm">
-            <div className="p-5 border-b border-[#24272A]">
-               <h3 className="font-semibold text-[#F1F1EF] flex items-center gap-2">
-                 <AlertTriangle className="h-4 w-4 text-amber-500" /> Stock Alerts
-               </h3>
-            </div>
-            <div className="p-5 space-y-4">
-               {products.filter(p => p.stock < 10).map(product => (
-                  <div key={product.id} className="flex justify-between items-start pb-4 border-b border-[#24272A] last:border-0 last:pb-0">
-                     <div>
-                        <p className="text-sm font-medium text-[#F1F1EF] line-clamp-1">{product.name}</p>
-                        <p className="text-xs font-mono text-[#858884] mt-1">{product.sku}</p>
-                     </div>
-                     <div className={`px-2 py-1 rounded text-xs font-bold ${product.stock <= 0 ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
-                        {product.stock} left
-                     </div>
-                  </div>
-               ))}
-               {products.filter(p => p.stock < 10).length === 0 && (
-                  <p className="text-sm text-[#858884] text-center py-4">Inventory levels are healthy.</p>
-               )}
-            </div>
-         </div>
+        <div className="overflow-hidden rounded-xl border border-[#24272A] bg-[#17191C] shadow-sm">
+          <div className="flex items-center justify-between border-b border-[#24272A] p-5"><h3 className="flex items-center gap-2 font-semibold text-[#F1F3EF]"><AlertTriangle className="h-4 w-4 text-amber-500" /> Stock Alerts</h3><button type="button" onClick={() => navigate(`${adminBasePath}/tools` || '/tools')} className="text-xs font-semibold text-[#9C6644] hover:underline">View tools</button></div>
+          <div className="space-y-4 p-5">
+            {lowStockProducts.slice(0, 8).map((product) => <div key={product.id} className="flex items-start justify-between gap-3 border-b border-[#24272A] pb-4 last:border-0 last:pb-0"><div className="min-w-0"><p className="line-clamp-1 text-sm font-medium text-[#F1F3EF]">{product.name || 'Unnamed appliance'}</p><p className="mt-1 text-xs font-mono text-[#858884]">{product.sku || '—'}</p></div><div className={`shrink-0 rounded px-2 py-1 text-xs font-bold ${Number(product.stock || 0) <= 0 ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>{Number(product.stock || 0)} left</div></div>)}
+            {!loading && !lowStockProducts.length && <p className="py-4 text-center text-sm text-[#858884]">Inventory levels are healthy.</p>}
+            {loading && <p className="py-4 text-center text-sm text-[#858884]">Loading inventory...</p>}
+          </div>
+        </div>
       </div>
     </div>
   );
