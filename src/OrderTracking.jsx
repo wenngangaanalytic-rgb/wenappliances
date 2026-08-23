@@ -62,7 +62,7 @@ const getFunctionErrorMessage = async (error) => {
 
 const normalizeStatus = (status) => {
   const value = String(status || 'Pending').trim().toLowerCase();
-  if (value === 'cancelled') return 'Cancelled';
+  if (value === 'cancelled' || value.includes('cancel')) return 'Cancelled';
   if (value === 'completed' || value === 'complete' || value === 'delivered' || value === 'delivered & paid' || value === 'picked' || value === 'picked & paid') return 'Completed';
   if (value === 'confirmed' || value === 'paid & confirmed' || value === 'processing') return 'Confirmed';
   return 'Pending';
@@ -82,6 +82,7 @@ const getStatusIndex = (status) => {
 
 const getStatusLabel = (status, fulfillmentMethod) => {
   const normalized = normalizeStatus(status);
+  if (normalized === 'Cancelled') return 'Order cancelled';
   if (normalized === 'Completed') return getFinalStatusLabel(fulfillmentMethod);
   if (normalized === 'Confirmed') return 'Confirmed';
   return 'Pending';
@@ -103,10 +104,10 @@ function OrderStatus({ status, fulfillmentMethod, cancellationReason }) {
 
   if (isCancelled) {
     return (
-      <div className="mt-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+      <div className="order-cancelled-notice mt-5 flex items-start gap-3 rounded-xl border p-4 text-sm">
         <XCircle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
         <p>
-          This order has been cancelled.
+          Order cancelled.
           {cancellationReason ? ` Reason: ${cancellationReason}` : ' Please contact support if you need help.'}
         </p>
       </div>
@@ -193,7 +194,7 @@ function OrderCard({ order, onCancel, cancelling, expanded, onToggle }) {
           <span className="mt-2 block text-xs font-semibold text-[#9C6644]">{expanded ? 'Hide order details' : 'View order details'}</span>
           </span>
         </button>
-        <div className={`flex items-center gap-2 self-start rounded-full border px-3 py-1.5 text-sm font-bold ${isCancelled ? 'border-red-200 bg-red-50 text-red-800' : 'border-[#9C6644]/30 bg-[#9C6644]/10 text-[#8A5A3C]'}`}>
+        <div className={`flex items-center gap-2 self-start rounded-full border px-3 py-1.5 text-sm font-bold ${isCancelled ? 'order-cancelled-badge' : 'border-[#9C6644]/30 bg-[#9C6644]/10 text-[#8A5A3C]'}`}>
           {isCancelled ? <XCircle className="h-4 w-4" aria-hidden="true" /> : <PackageCheck className="h-4 w-4" aria-hidden="true" />}
           {getStatusLabel(status, order.fulfillmentMethod)}
         </div>

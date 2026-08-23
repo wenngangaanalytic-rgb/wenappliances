@@ -153,6 +153,21 @@ html[data-theme='light'] .order-status-select.order-status-confirmed { backgroun
 html[data-theme='light'] .order-status-select.order-status-completed { background: #e1ebf5 !important; border-color: #92adc9 !important; color: #31506b !important; }
 html[data-theme='light'] .order-status-select.order-status-cancelled { background: #f6e3e6 !important; border-color: #d0a1aa !important; color: #7d303b !important; }
 
+/* Customer-facing cancellation status: muted and readable instead of bright alert red. */
+.order-cancelled-badge,
+.order-cancelled-notice {
+  border-color: #c9aaa5 !important;
+  background: #f1e7e4 !important;
+  color: #72534f !important;
+}
+
+html[data-theme='dark'] .order-cancelled-badge,
+html[data-theme='dark'] .order-cancelled-notice {
+  border-color: #6d4f54 !important;
+  background: #2d2326 !important;
+  color: #d0aaad !important;
+}
+
 /* Keep the storefront add-to-cart action readable in both themes. */
 html[data-theme='light'] .add-to-cart-button:not(:disabled) {
   background-color: #f4f3ef !important;
