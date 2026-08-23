@@ -9,6 +9,7 @@ import {
   Mail,
   MapPin,
   PackageCheck,
+  Phone,
   RefreshCw,
   Search,
   Truck,
@@ -16,6 +17,13 @@ import {
   Ban
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
+import {
+  downloadReceiptPdf,
+  formatReceiptDate,
+  formatReceiptMoney,
+  getReceiptItems,
+  getReceiptStatusLabel
+} from './receiptPdf';
 
 const formatMoney = (amount) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(amount) || 0);
@@ -87,37 +95,6 @@ const getStatusMessage = (status, fulfillmentMethod) => {
   return 'Your order is awaiting confirmation from WenAppliances.';
 };
 
-const buildReceiptText = (order) => [
-  'WenAppliances Receipt',
-  '=====================',
-  `Order: ${order.id}`,
-  `Date: ${formatDate(order.createdAt)}`,
-  `Customer: ${order.customerName || 'Not provided'}`,
-  `Email: ${order.customerEmail || 'Not provided'}`,
-  `Fulfillment: ${order.fulfillmentMethod === 'DOOR_PICKUP' ? 'Door pickup' : 'Delivery is offered'}`,
-  `Status: ${getStatusLabel(order.status, order.fulfillmentMethod)}`,
-  '',
-  'Items',
-  '-----',
-  ...((order.items || []).map((item) => `${item.name || 'Appliance'} x ${item.quantity} — ${formatMoney(Number(item.priceAtTime) * Number(item.quantity))}`)),
-  '',
-  `Amount paid: ${formatMoney(order.totalAmount)}`,
-  '',
-  'Thank you for choosing WenAppliances.'
-].join('\n');
-
-const downloadReceipt = (order) => {
-  const blob = new Blob([buildReceiptText(order)], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `WenAppliances-receipt-${order.id}.txt`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-};
-
 function OrderStatus({ status, fulfillmentMethod, cancellationReason }) {
   const normalizedStatus = normalizeStatus(status);
   const currentIndex = getStatusIndex(normalizedStatus);
@@ -158,6 +135,39 @@ function OrderStatus({ status, fulfillmentMethod, cancellationReason }) {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function ReceiptPreview({ order }) {
+  const items = getReceiptItems(order);
+  const statusLabel = getReceiptStatusLabel(order);
+
+  return (
+    <div className="relative mt-4 overflow-hidden rounded-xl border border-[#D9E7F7] bg-white p-5 text-[#111214] shadow-inner">
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-[0.055]" aria-hidden="true">
+        <span className="rotate-[-24deg] text-3xl font-black tracking-[0.18em] text-[#9C6644]">WENAPPLIANCES</span>
+      </div>
+      <div className="relative">
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#E5E4E0] pb-4">
+          <div className="flex items-center gap-2">
+            <span className="grid h-9 w-9 place-items-center rounded-lg bg-[#9C6644] font-serif text-xl text-white">W</span>
+            <span className="text-lg font-bold"><span className="text-[#111214]">Wen</span><span className="text-[#9C6644]">Appliances</span></span>
+          </div>
+          <div className="text-right text-xs text-[#4A5568]">
+            <p className="font-bold uppercase tracking-wider text-[#9C6644]">Purchase receipt</p>
+            <p className="mt-1">{formatReceiptDate(order.createdAt)}</p>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-4 text-xs text-[#4A5568] sm:grid-cols-2">
+          <div><p className="font-bold uppercase tracking-wider text-[#858884]">Customer</p><p className="mt-1 font-semibold text-[#111214]">{order.customerName || 'Not provided'}</p><p>{order.customerEmail || 'Not provided'}</p><p className="flex items-center gap-1"><Phone className="h-3 w-3 text-[#9C6644]" aria-hidden="true" /> {order.customerPhone || 'Not provided'}</p></div>
+          <div><p className="font-bold uppercase tracking-wider text-[#858884]">Order status</p><p className="mt-1 font-semibold text-[#1D4ED8]">{statusLabel}</p><p>{order.fulfillmentMethod === 'DOOR_PICKUP' ? 'Door pickup' : 'Delivery is offered'}</p><p>{order.paymentMethod || 'Payment method unavailable'}</p></div>
+        </div>
+        <div className="mt-5 overflow-x-auto rounded-lg border border-[#E5E4E0]">
+          <table className="w-full min-w-[420px] text-left text-xs"><thead className="bg-[#F4EEE8] text-[10px] uppercase tracking-wider text-[#4A5568]"><tr><th className="px-3 py-2">Item</th><th className="px-3 py-2 text-center">Qty</th><th className="px-3 py-2 text-right">Unit</th><th className="px-3 py-2 text-right">Total</th></tr></thead><tbody className="divide-y divide-[#E5E4E0]">{items.map((item) => <tr key={`${item.name}-${item.quantity}`}><td className="px-3 py-2 font-semibold">{item.name}</td><td className="px-3 py-2 text-center">{item.quantity}</td><td className="px-3 py-2 text-right">{formatReceiptMoney(item.unitPrice)}</td><td className="px-3 py-2 text-right font-semibold">{formatReceiptMoney(item.total)}</td></tr>)}</tbody></table>
+        </div>
+        <div className="mt-4 flex justify-end border-t border-[#E5E4E0] pt-4"><p className="text-right"><span className="block text-[10px] font-bold uppercase tracking-wider text-[#858884]">Total recorded</span><span className="text-xl font-bold text-[#111214]">{formatReceiptMoney(order.totalAmount)}</span></p></div>
       </div>
     </div>
   );
@@ -245,10 +255,10 @@ function OrderCard({ order, onCancel, cancelling, expanded, onToggle }) {
             </div>
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={() => setShowReceipt((current) => !current)} className="rounded-lg border border-[#2563EB]/30 bg-white px-3 py-2 text-xs font-bold text-[#1D4ED8] hover:bg-[#DBEAFE]">{showReceipt ? 'Hide preview' : 'Preview receipt'}</button>
-              <button type="button" onClick={() => downloadReceipt(order)} className="inline-flex items-center gap-2 rounded-lg bg-[#2563EB] px-3 py-2 text-xs font-bold text-white hover:bg-[#1D4ED8]"><Download className="h-3.5 w-3.5" aria-hidden="true" /> Download receipt</button>
+              <button type="button" onClick={() => downloadReceiptPdf(order)} className="inline-flex items-center gap-2 rounded-lg bg-[#2563EB] px-3 py-2 text-xs font-bold text-white hover:bg-[#1D4ED8]"><Download className="h-3.5 w-3.5" aria-hidden="true" /> Download PDF receipt</button>
             </div>
           </div>
-          {showReceipt && <pre className="mt-4 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-[#BFDBFE] bg-white p-4 text-xs leading-5 text-[#111214]">{buildReceiptText(order)}</pre>}
+          {showReceipt && <ReceiptPreview order={order} />}
         </div>}
       </div>}
     </article>

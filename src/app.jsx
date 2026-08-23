@@ -1364,7 +1364,10 @@ const AdminLayout = ({ children }) => {
       const { data, error } = await supabase.from('orders').select('id, status');
       if (!active || error) return;
 
-      const count = (data ?? []).filter((order) => String(order.status || '').toLowerCase() !== 'cancelled').length;
+      const count = (data ?? []).filter((order) => {
+        const status = String(order.status || '').toLowerCase();
+        return !status.includes('cancel') && !status.includes('complete') && !status.includes('deliver') && !status.includes('picked');
+      }).length;
       setActiveOrderCount(count);
     };
 
@@ -1574,8 +1577,12 @@ const AdminDashboard = () => {
     };
   }, []);
 
-  const activeOrders = orders.filter((order) => normalizeAdminOrderStatus(order.status) !== 'CANCELLED');
-  const completedOrders = activeOrders.filter((order) => normalizeAdminOrderStatus(order.status) === 'COMPLETED');
+  const trackedOrders = orders.filter((order) => normalizeAdminOrderStatus(order.status) !== 'CANCELLED');
+  const activeOrders = trackedOrders.filter((order) => {
+    const status = normalizeAdminOrderStatus(order.status);
+    return status === 'PENDING' || status === 'CONFIRMED';
+  });
+  const completedOrders = trackedOrders.filter((order) => normalizeAdminOrderStatus(order.status) === 'COMPLETED');
   const pendingOrders = activeOrders.filter((order) => normalizeAdminOrderStatus(order.status) === 'PENDING');
   const collectedRevenue = completedOrders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
   const pendingValue = pendingOrders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);

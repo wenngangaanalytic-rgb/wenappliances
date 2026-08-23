@@ -24,6 +24,12 @@ revoke insert, update, delete on table public.products from anon, authenticated;
 revoke insert, update, delete on table public.orders, public.order_items from anon, authenticated;
 revoke insert, update, delete on table public.members from anon, authenticated;
 
+-- The authenticated SUPER_ADMIN dashboard reads orders and updates their
+-- fulfillment status. RLS still limits those operations to SUPER_ADMIN rows;
+-- these grants only make the intended Data API operations reachable.
+grant select, update on table public.orders to authenticated;
+grant select on table public.order_items to authenticated;
+
 -- Re-assert the only intended browser write: a SUPER_ADMIN can manage the
 -- catalog and images through the existing RLS policies.
 grant insert, update, delete on table public.products to authenticated;

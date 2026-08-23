@@ -7,6 +7,7 @@
 -- server-side service role. Customers must not insert trusted order data
 -- directly from the browser.
 alter table public.orders add column if not exists delivery_address text;
+alter table public.orders add column if not exists customer_phone text;
 alter table public.orders add column if not exists fulfillment_method text not null default 'DELIVERY';
 alter table public.orders add column if not exists cancellation_reason text;
 alter table public.orders drop constraint if exists orders_fulfillment_method_check;

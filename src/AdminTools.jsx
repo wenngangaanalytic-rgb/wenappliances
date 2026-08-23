@@ -3,13 +3,18 @@ import {
   Boxes,
   ClipboardList,
   Download,
+  Eye,
+  EyeOff,
   LoaderCircle,
+  LockKeyhole,
   RefreshCw,
   Users,
-  Wrench
+  Wrench,
+  X
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from './supabaseClient';
+import { downloadCsvExport, downloadProtectedExport } from './secureExports';
 
 const formatMoney = (amount) => new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -24,29 +29,9 @@ const normalizeStatus = (status) => {
   return 'PENDING';
 };
 
-const csvCell = (value) => {
-  const text = String(value ?? '');
-  const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
-  return `"${safeText.replaceAll('"', '""')}"`;
-};
-
-const downloadCsv = (filename, columns, rows) => {
-  const csv = [
-    columns.map((column) => csvCell(column.label)).join(','),
-    ...rows.map((row) => columns.map((column) => csvCell(row[column.key])).join(','))
-  ].join('\n');
-  const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-};
-
 const formatDate = (value) => value ? new Date(value).toLocaleString() : '—';
+
+const isValidExportPin = (pin) => /^\d{4}$/.test(pin) || pin.length >= 8;
 
 export default function AdminTools() {
   const [products, setProducts] = useState([]);
@@ -55,6 +40,11 @@ export default function AdminTools() {
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [error, setError] = useState('');
+  const [pendingExport, setPendingExport] = useState(null);
+  const [exportPin, setExportPin] = useState('');
+  const [showExportPin, setShowExportPin] = useState(false);
+  const [exportError, setExportError] = useState('');
+  const [exportingFormat, setExportingFormat] = useState('');
 
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -93,41 +83,117 @@ export default function AdminTools() {
     return () => window.clearInterval(refreshTimer);
   }, []);
 
-  const activeOrders = useMemo(() => orders.filter((order) => normalizeStatus(order.status) !== 'CANCELLED'), [orders]);
+  const trackedOrders = useMemo(() => orders.filter((order) => normalizeStatus(order.status) !== 'CANCELLED'), [orders]);
+  const activeOrders = useMemo(() => trackedOrders.filter((order) => {
+    const status = normalizeStatus(order.status);
+    return status === 'PENDING' || status === 'CONFIRMED';
+  }), [trackedOrders]);
   const pendingOrders = useMemo(() => activeOrders.filter((order) => normalizeStatus(order.status) === 'PENDING'), [activeOrders]);
-  const completedRevenue = useMemo(() => activeOrders
-    .filter((order) => normalizeStatus(order.status) === 'COMPLETED')
-    .reduce((total, order) => total + Number(order.total_amount || 0), 0), [activeOrders]);
+  const completedOrders = useMemo(() => trackedOrders.filter((order) => normalizeStatus(order.status) === 'COMPLETED'), [trackedOrders]);
+  const completedRevenue = useMemo(() => completedOrders
+    .reduce((total, order) => total + Number(order.total_amount || 0), 0), [completedOrders]);
   const pendingValue = useMemo(() => pendingOrders.reduce((total, order) => total + Number(order.total_amount || 0), 0), [pendingOrders]);
   const lowStockProducts = useMemo(() => [...products]
     .filter((product) => Number(product.stock || 0) <= 10)
     .sort((left, right) => Number(left.stock || 0) - Number(right.stock || 0)), [products]);
 
-  const exportInventory = () => downloadCsv('wenappliances-inventory.csv', [
-    { key: 'name', label: 'Product name' },
-    { key: 'sku', label: 'SKU (optional)' },
-    { key: 'category', label: 'Category' },
-    { key: 'price', label: 'Price USD' },
-    { key: 'stock', label: 'Stock' },
-    { key: 'status', label: 'Status (optional)' },
-    { key: 'created_at', label: 'Created' }
-  ], products);
+  const exportDefinitions = {
+    inventory: {
+      title: 'Inventory records',
+      csvFilename: 'wenappliances-inventory.csv',
+      protectedFilename: 'wenappliances-inventory-protected.html',
+      columns: [
+        { key: 'name', label: 'Product name' },
+        { key: 'sku', label: 'SKU (optional)' },
+        { key: 'category', label: 'Category' },
+        { key: 'price', label: 'Price USD' },
+        { key: 'stock', label: 'Stock' },
+        { key: 'status', label: 'Status (optional)' },
+        { key: 'created_at', label: 'Created' }
+      ],
+      rows: products
+    },
+    orders: {
+      title: 'Order records',
+      csvFilename: 'wenappliances-orders.csv',
+      protectedFilename: 'wenappliances-orders-protected.html',
+      columns: [
+        { key: 'id', label: 'Order ID' },
+        { key: 'customer_name', label: 'Customer' },
+        { key: 'customer_email', label: 'Email' },
+        { key: 'total_amount', label: 'Total USD' },
+        { key: 'status', label: 'Status' },
+        { key: 'fulfillment_method', label: 'Fulfillment' },
+        { key: 'created_at', label: 'Placed' }
+      ],
+      rows: orders
+    },
+    members: {
+      title: 'Member records',
+      csvFilename: 'wenappliances-members.csv',
+      protectedFilename: 'wenappliances-members-protected.html',
+      columns: [
+        { key: 'full_name', label: 'Name' },
+        { key: 'email', label: 'Email' },
+        { key: 'created_at', label: 'Joined' }
+      ],
+      rows: members
+    }
+  };
 
-  const exportOrders = () => downloadCsv('wenappliances-orders.csv', [
-    { key: 'id', label: 'Order ID' },
-    { key: 'customer_name', label: 'Customer' },
-    { key: 'customer_email', label: 'Email' },
-    { key: 'total_amount', label: 'Total USD' },
-    { key: 'status', label: 'Status' },
-    { key: 'fulfillment_method', label: 'Fulfillment' },
-    { key: 'created_at', label: 'Placed' }
-  ], orders);
+  const openExportDialog = (exportKey) => {
+    setPendingExport(exportDefinitions[exportKey]);
+    setExportPin('');
+    setExportError('');
+    setShowExportPin(false);
+  };
 
-  const exportMembers = () => downloadCsv('wenappliances-members.csv', [
-    { key: 'full_name', label: 'Name' },
-    { key: 'email', label: 'Email' },
-    { key: 'created_at', label: 'Joined' }
-  ], members);
+  const closeExportDialog = (force = false) => {
+    if (exportingFormat && !force) return;
+    setPendingExport(null);
+    setExportPin('');
+    setExportError('');
+    setShowExportPin(false);
+  };
+
+  const handleExport = async (format) => {
+    if (!pendingExport) return;
+    const pin = exportPin.trim();
+    if (!isValidExportPin(pin)) {
+      setExportError('Enter a 4-digit PIN or a password with at least 8 characters.');
+      return;
+    }
+
+    setExportError('');
+    setExportingFormat(format);
+    try {
+      if (format === 'csv') {
+        downloadCsvExport({
+          filename: pendingExport.csvFilename,
+          title: pendingExport.title,
+          columns: pendingExport.columns,
+          rows: pendingExport.rows
+        });
+        toast.success(`${pendingExport.title} CSV downloaded.`);
+      } else {
+        await downloadProtectedExport({
+          filename: pendingExport.protectedFilename,
+          title: pendingExport.title,
+          columns: pendingExport.columns,
+          rows: pendingExport.rows,
+          pin
+        });
+        toast.success('Protected report downloaded. The PIN is required to open it.');
+      }
+      closeExportDialog(true);
+    } catch (exportFailure) {
+      const message = exportFailure instanceof Error ? exportFailure.message : 'The export could not be created.';
+      setExportError(message);
+      toast.error(message);
+    } finally {
+      setExportingFormat('');
+    }
+  };
 
   return (
     <section className="space-y-6" aria-labelledby="admin-tools-title">
@@ -159,15 +225,16 @@ export default function AdminTools() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="font-semibold text-[#F1F3EF]">Download records</h2>
-              <p className="mt-1 text-sm text-[#858884]">Keep an offline copy for bookkeeping and stock planning.</p>
+              <p className="mt-1 text-sm text-[#858884]">Branded CSVs and PIN-protected reports for bookkeeping and stock planning.</p>
             </div>
             <Download className="h-5 w-5 text-[#9C6644]" />
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            <ExportButton label="Inventory CSV" onClick={exportInventory} disabled={loading || !products.length} />
-            <ExportButton label="Orders CSV" onClick={exportOrders} disabled={loading || !orders.length} />
-            <ExportButton label="Members CSV" onClick={exportMembers} disabled={loading || !members.length} />
+            <ExportButton label="Inventory CSV" onClick={() => openExportDialog('inventory')} disabled={loading || !products.length} />
+            <ExportButton label="Orders CSV" onClick={() => openExportDialog('orders')} disabled={loading || !orders.length} />
+            <ExportButton label="Members CSV" onClick={() => openExportDialog('members')} disabled={loading || !members.length} />
           </div>
+          <p className="mt-4 text-xs leading-5 text-[#858884]">Each download asks for a 4-digit PIN or password. Choose the protected report if the file must ask for that PIN again when opened.</p>
         </div>
 
         <div className="rounded-xl border border-[#24272A] bg-[#17191C] p-5 shadow-sm">
@@ -179,9 +246,9 @@ export default function AdminTools() {
             <p className="text-2xl font-bold text-emerald-400">{formatMoney(completedRevenue)}</p>
           </div>
           <div className="mt-5 h-2 overflow-hidden rounded-full bg-[#24272A]">
-            <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${activeOrders.length ? Math.min(100, (activeOrders.filter((order) => normalizeStatus(order.status) === 'COMPLETED').length / activeOrders.length) * 100) : 0}%` }} />
+            <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${trackedOrders.length ? Math.min(100, (completedOrders.length / trackedOrders.length) * 100) : 0}%` }} />
           </div>
-          <p className="mt-2 text-xs text-[#858884]">{activeOrders.filter((order) => normalizeStatus(order.status) === 'COMPLETED').length} of {activeOrders.length} active orders completed</p>
+          <p className="mt-2 text-xs text-[#858884]">{completedOrders.length} of {trackedOrders.length} non-cancelled orders completed</p>
         </div>
       </div>
 
@@ -221,6 +288,35 @@ export default function AdminTools() {
           </table>
         </div>
       </div>
+
+      {pendingExport && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeExportDialog(); }}>
+          <div className="w-full max-w-lg rounded-2xl border border-[#3A3F44] bg-[#17191C] p-6 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="export-security-title">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <span className="mb-3 inline-flex rounded-xl bg-[#9C6644]/15 p-3 text-[#C0835A]"><LockKeyhole className="h-5 w-5" aria-hidden="true" /></span>
+                <h2 id="export-security-title" className="text-xl font-bold text-[#F1F3EF]">Secure {pendingExport.title.toLowerCase()}</h2>
+                <p className="mt-2 text-sm leading-6 text-[#B8BAB7]">Enter a 4-digit PIN or password before downloading. The protected report encrypts the records and requests this PIN again when opened.</p>
+              </div>
+              <button type="button" onClick={closeExportDialog} disabled={Boolean(exportingFormat)} className="rounded-lg p-2 text-[#858884] transition hover:bg-[#24272A] hover:text-[#F1F3EF] disabled:cursor-not-allowed disabled:opacity-50" aria-label="Close export security dialog"><X className="h-5 w-5" /></button>
+            </div>
+
+            <div className="mt-6">
+              <label htmlFor="export-security-pin" className="text-sm font-semibold text-[#F1F3EF]">Export PIN or password</label>
+              <div className="relative mt-2">
+                <input id="export-security-pin" type={showExportPin ? 'text' : 'password'} value={exportPin} onChange={(event) => { setExportPin(event.target.value); setExportError(''); }} autoFocus autoComplete="new-password" inputMode="numeric" placeholder="4-digit PIN or strong password" className="w-full rounded-lg border border-[#4A5568]/70 bg-[#0B0B0C] px-3 py-3 pr-11 text-[#F1F3EF] outline-none transition placeholder:text-[#697078] focus:border-[#9C6644]" />
+                <button type="button" onClick={() => setShowExportPin((visible) => !visible)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-[#858884] hover:bg-[#24272A] hover:text-[#F1F3EF]" aria-label={showExportPin ? 'Hide export PIN' : 'Show export PIN'}>{showExportPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+              </div>
+              {exportError && <p className="mt-2 text-sm text-red-300" role="alert">{exportError}</p>}
+            </div>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <button type="button" onClick={() => handleExport('csv')} disabled={Boolean(exportingFormat)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#4A5568]/60 bg-[#0B0B0C] px-4 py-3 text-sm font-semibold text-[#F1F3EF] transition hover:-translate-y-0.5 hover:border-[#9C6644] disabled:cursor-not-allowed disabled:opacity-50">{exportingFormat === 'csv' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Download CSV</button>
+              <button type="button" onClick={() => handleExport('protected')} disabled={Boolean(exportingFormat)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#9C6644] px-4 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-[#B8754B] disabled:cursor-not-allowed disabled:opacity-50">{exportingFormat === 'protected' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <LockKeyhole className="h-4 w-4" />} Protected report</button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

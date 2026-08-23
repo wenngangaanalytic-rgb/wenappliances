@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from './supabaseClient';
+import { downloadReceiptPdf, getReceiptItems, getReceiptStatusLabel } from './receiptPdf';
 
 const STATUS_OPTIONS = [
   { value: 'Pending', label: 'Pending' },
@@ -72,44 +73,23 @@ const statusLabel = (status, fulfillmentMethod) => {
 
 const statusClass = (status) => STATUS_STYLES[normalizeStatus(status)] || 'order-status-unknown';
 
-const buildReceiptText = (order) => {
-  const items = (order.order_items ?? []).map((item) => {
-    const name = item.product_name || item.products?.name || 'Appliance';
-    const lineTotal = Number(item.price_at_time || 0) * Number(item.quantity || 0);
-    return `${name} x ${item.quantity} — ${formatMoney(lineTotal)}`;
-  });
-
+const buildReceiptEmailBody = (order) => {
+  const items = getReceiptItems(order).map((item) => `${item.name} x ${item.quantity} - ${formatMoney(item.total)}`);
   return [
-    'WenAppliances Receipt',
-    '=====================',
+    'WenAppliances receipt',
     `Order: ${order.id}`,
-    `Date: ${order.created_at ? new Date(order.created_at).toLocaleString() : 'Unavailable'}`,
     `Customer: ${order.customer_name || 'Not provided'}`,
-    `Email: ${order.customer_email || 'Not provided'}`,
+    `Phone: ${order.customer_phone || 'Not provided'}`,
+    `Status: ${getReceiptStatusLabel(order)}`,
     `Fulfillment: ${order.fulfillment_method === 'DOOR_PICKUP' ? 'Door pickup' : 'Delivery is offered'}`,
-    `Status: ${statusLabel(order.status, order.fulfillment_method)}`,
-    ...(order.cancellation_reason ? [`Cancellation reason: ${order.cancellation_reason}`] : []),
     '',
-    'Items',
-    '-----',
+    'Items:',
     ...(items.length ? items : ['No line items found.']),
     '',
-    `Total: ${formatMoney(order.total_amount)}`,
+    `Total recorded: ${formatMoney(order.total_amount)}`,
     '',
     'Thank you for choosing WenAppliances.'
   ].join('\n');
-};
-
-const downloadReceipt = (order) => {
-  const blob = new Blob([buildReceiptText(order)], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `WenAppliances-receipt-${order.id}.txt`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
 const emailReceipt = (order) => {
@@ -119,7 +99,7 @@ const emailReceipt = (order) => {
   }
 
   const subject = `WenAppliances receipt - ${order.id}`;
-  window.location.href = `mailto:${order.customer_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(buildReceiptText(order))}`;
+  window.location.href = `mailto:${order.customer_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(buildReceiptEmailBody(order))}`;
 };
 
 export default function AdminOrders() {
@@ -296,7 +276,11 @@ export default function AdminOrders() {
     setSavingPriceId('');
   };
 
-  const orderCountLabel = useMemo(() => `${orders.length} active order${orders.length === 1 ? '' : 's'}`, [orders.length]);
+  const activeOrderCount = useMemo(() => orders.filter((order) => {
+    const status = normalizeStatus(order.status);
+    return status === 'Pending' || status === 'Confirmed';
+  }).length, [orders]);
+  const orderCountLabel = useMemo(() => `${activeOrderCount} active order${activeOrderCount === 1 ? '' : 's'}`, [activeOrderCount]);
 
   return (
     <section className="space-y-6" aria-labelledby="admin-orders-title">
@@ -307,7 +291,7 @@ export default function AdminOrders() {
             <h1 id="admin-orders-title" className="text-2xl font-bold tracking-tight text-[#F1F3EF]">Order management</h1>
             <p className="mt-1 text-sm text-[#858884]">Review customer details, update fulfillment status, and record negotiated pricing.</p>
           </div>
-          {!loading && <span className="rounded-full border border-[#24272A] bg-[#17191C] px-3 py-1 text-xs font-semibold text-[#B8BAB7]">{orderCountLabel}</span>}
+          {!loading && activeOrderCount > 0 && <span className="rounded-full border border-[#24272A] bg-[#17191C] px-3 py-1 text-xs font-semibold text-[#B8BAB7]">{orderCountLabel}</span>}
         </div>
       </div>
 
@@ -363,8 +347,8 @@ export default function AdminOrders() {
                       <p className="font-bold text-[#F1F3EF]">{formatMoney(order.total_amount)}</p>
                     </div>
                     {isPriceAdjusted && <span className="rounded-full border border-purple-500/30 bg-purple-500/10 px-2.5 py-1 text-[11px] font-bold text-purple-300">Price Adjusted</span>}
-                    <button type="button" onClick={() => downloadReceipt(order)} className="inline-flex items-center gap-1.5 rounded-lg border border-[#4A5568]/50 px-3 py-2 text-xs font-semibold text-[#B8BAB7] transition hover:border-[#9C6644] hover:text-[#F1F3EF]" title="Download receipt">
-                      <Download className="h-3.5 w-3.5" aria-hidden="true" /> Receipt
+                    <button type="button" onClick={() => downloadReceiptPdf(order)} className="inline-flex items-center gap-1.5 rounded-lg border border-[#4A5568]/50 px-3 py-2 text-xs font-semibold text-[#B8BAB7] transition hover:border-[#9C6644] hover:text-[#F1F3EF]" title="Download PDF receipt">
+                      <Download className="h-3.5 w-3.5" aria-hidden="true" /> PDF receipt
                     </button>
                     <button type="button" onClick={() => emailReceipt(order)} className="inline-flex items-center gap-1.5 rounded-lg border border-[#4A5568]/50 px-3 py-2 text-xs font-semibold text-[#B8BAB7] transition hover:border-[#9C6644] hover:text-[#F1F3EF]" title="Email receipt to customer">
                       <Mail className="h-3.5 w-3.5" aria-hidden="true" /> Email
