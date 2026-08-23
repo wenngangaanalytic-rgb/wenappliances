@@ -16,11 +16,9 @@ import OrderTracking from './OrderTracking';
 import SupabaseAdminOrders from './AdminOrders';
 import SupabaseAdminMembers from './AdminMembers';
 import AdminTools from './AdminTools';
-import AdminPasskeySettings from './AdminPasskeySettings';
 import AccountMenu from './AccountMenu';
 import ResetPassword from './ResetPassword';
 import PresenceTracker from './PresenceTracker';
-import PwaInstallPrompt from './PwaInstallPrompt';
 import OrderNotificationPrompt from './OrderNotificationPrompt';
 import { AdminOrderNotificationWatcher, CustomerOrderNotificationWatcher } from './OrderNotificationWatchers';
 import { rememberOrderForNotifications } from './browserNotifications';
@@ -266,38 +264,6 @@ export default function App() {
     window.addEventListener('popstate', handleBrowserNavigation);
     return () => window.removeEventListener('popstate', handleBrowserNavigation);
   }, []);
-
-  useEffect(() => {
-    if (!isAdminApp || user?.role !== 'SUPER_ADMIN') return undefined;
-
-    let terminationStarted = false;
-    const terminateHiddenAdminSession = () => {
-      // WebAuthn temporarily hides the page while the device prompt is open.
-      // Do not sign out in the middle of that security ceremony.
-      if (typeof window !== 'undefined' && window.__wenAdminPasskeyCeremony) return;
-      if (terminationStarted) return;
-
-      terminationStarted = true;
-      setUser(null);
-      setProducts([]);
-      setOrders([]);
-      setCart([]);
-      setTrackingPrefill(null);
-      void supabase.auth.signOut({ scope: 'local' });
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') terminateHiddenAdminSession();
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('pagehide', terminateHiddenAdminSession);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('pagehide', terminateHiddenAdminSession);
-    };
-  }, [user?.role]);
 
   const loadProducts = async () => {
     setProductsLoading(true);
@@ -577,7 +543,6 @@ export default function App() {
       <div className="min-h-screen font-sans bg-[#F4F3EF] text-[#111214] antialiased">
         {renderRoute()}
       </div>
-      {!isAdminApp && <PwaInstallPrompt />}
       <OrderNotificationPrompt isAdmin={isAdminApp} active={!isAdminApp || user?.role === 'SUPER_ADMIN'} />
       {isAdminApp ? <AdminOrderNotificationWatcher user={user} /> : <CustomerOrderNotificationWatcher user={user} refreshKey={trackingPrefill?.orderId} />}
       <PresenceTracker user={user} />
@@ -1497,8 +1462,7 @@ const AdminLayout = ({ children }) => {
              <span className="hidden truncate sm:inline">Environment: Production Database</span>
              <span className="sm:hidden">Admin</span>
            </div>
-           <div className="flex items-center gap-3">
-             <AdminPasskeySettings user={user} />
+             <div className="flex items-center gap-3">
              <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
              <a href={storefrontUrl} className="text-xs bg-[#24272A] hover:bg-[#1D2023] px-3 py-1.5 rounded border border-[#4A5568]/30 transition-colors">
                <span className="hidden sm:inline">View Public Storefront</span>

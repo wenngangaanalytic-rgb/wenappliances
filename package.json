@@ -10,9 +10,15 @@
     "build": "node scripts/build-for-vercel.mjs",
     "build:storefront": "vite build --mode storefront",
     "build:admin": "vite build --mode admin",
+    "android:admin:sync": "npm run build:admin && npx cap sync android",
+    "android:admin:apk": "npm run android:admin:sync && cd android && gradlew.bat assembleDebug",
+    "android:admin:open": "npx cap open android",
+    "security:audit": "node scripts/security-audit.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
     "@supabase/supabase-js": "^2.112.3",
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",
@@ -24,9 +30,11 @@
     "react-router-dom": "^7.18.2"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.0",
     "@tailwindcss/vite": "^4.1.12",
     "@vitejs/plugin-react": "^4.3.4",
     "tailwindcss": "^4.1.12",
+    "typescript": "^7.0.2",
     "vite": "^5.4.10"
   }
 }

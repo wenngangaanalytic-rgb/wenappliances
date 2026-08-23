@@ -6,13 +6,3 @@ verify_jwt = false
 
 [functions.cancel-order]
 verify_jwt = false
-
-# Admin Wen passkey configuration.
-# Keep the relying-party ID stable after passkeys are registered.
-[auth.passkey]
-enabled = true
-
-[auth.webauthn]
-rp_display_name = "Admin Wen"
-rp_id = "wenappliances-admin.vercel.app"
-rp_origins = ["https://wenappliances-admin.vercel.app"]

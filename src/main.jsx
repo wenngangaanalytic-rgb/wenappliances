@@ -24,8 +24,6 @@ const setApplicationIdentity = () => {
   const appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
   appleIcon?.setAttribute('href', '/admin-wen-logo.svg');
 
-  const manifest = document.querySelector('link[rel="manifest"]');
-  manifest?.setAttribute('href', '/admin-wen-manifest.webmanifest');
 };
 
 setApplicationIdentity();
@@ -41,11 +39,24 @@ createRoot(document.getElementById('root')).render(
   </React.StrictMode>
 );
 
-if ((isAdminBuild || isAdminHost || import.meta.env.MODE === 'storefront') && 'serviceWorker' in navigator) {
+if ((isAdminBuild || isAdminHost) && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    const serviceWorkerPath = isAdminBuild || isAdminHost ? '/admin-service-worker.js' : '/service-worker.js';
-    navigator.serviceWorker.register(serviceWorkerPath).catch((error) => {
+    navigator.serviceWorker.register('/admin-service-worker.js').catch((error) => {
       console.warn('WenAppliances notification service worker could not be registered.', error);
+    });
+  });
+}
+
+// Remove the old customer installable-app service worker from browsers that
+// installed it before the storefront was returned to a normal website.
+if (!isAdminBuild && !isAdminHost && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      registrations
+        .filter((registration) => registration.active?.scriptURL.endsWith('/service-worker.js'))
+        .forEach((registration) => registration.unregister());
+    }).catch(() => {
+      // Continue if browser service-worker access is unavailable.
     });
   });
 }

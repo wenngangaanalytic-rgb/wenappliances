@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Admin Wen</string>
+    <string name="title_activity_main">Admin Wen</string>
+    <string name="package_name">com.wenappliances.admin</string>
+    <string name="custom_url_scheme">com.wenappliances.admin</string>
+</resources>

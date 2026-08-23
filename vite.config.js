@@ -13,8 +13,7 @@ export default defineConfig(({ mode }) => ({
           .replaceAll('WenAppliances premium appliance store', 'Secure Admin Wen administration portal')
           .replaceAll('WenAppliances', 'Admin Wen')
           .replaceAll('#9C6644', '#2563EB')
-          .replaceAll('/wenappliances-logo.svg', '/admin-wen-logo.svg')
-          .replaceAll('/manifest.webmanifest', '/admin-wen-manifest.webmanifest');
+          .replaceAll('/wenappliances-logo.svg', '/admin-wen-logo.svg');
       }
     },
     react(),

@@ -15,10 +15,4 @@ const supabasePublishableKey =
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
   fallbackSupabaseAnonKey;
 
-export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
-  auth: {
-    // Supabase passkeys are experimental and must be explicitly enabled in
-    // the client as well as in the project's Auth settings.
-    experimental: { passkey: true }
-  }
-});
+export const supabase = createClient(supabaseUrl, supabasePublishableKey);
