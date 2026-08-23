@@ -4,6 +4,7 @@ The project now supports two independently buildable Vite applications from the 
 
 - Storefront: `npm run build:storefront` → `dist`
 - Admin portal: `npm run build:admin` → `dist/admin`
+- Admin tools: live Supabase dashboard metrics, low-stock watchlist, refresh, and CSV exports for inventory, orders, and members.
 
 Both applications use the same Supabase project and the browser-safe publishable/anon key. No service-role key belongs in either deployment.
 
@@ -22,13 +23,15 @@ The admin portal opens at the admin app root and uses `/dashboard`, `/products`,
 
 Create two Vercel projects from the same GitHub repository, with the Root Directory set to `/` for both projects.
 
+The root `vercel.json` intentionally contains only the SPA rewrite. Build commands and output directories are configured per Vercel project so the two Git-connected projects can build different modes from the same repository.
+
 ### Customer storefront project
 
 - Build Command: `npm run build:storefront`
 - Output Directory: `dist`
 - Environment Variables:
   - `VITE_SUPABASE_URL`
-  - `VITE_SUPABASE_ANON_KEY` or `VITE_SUPABASE_PUBLISHABLE_KEY`
+- `VITE_SUPABASE_ANON_KEY` or `VITE_SUPABASE_PUBLISHABLE_KEY`
 
 ### Admin portal project
 
