@@ -51,6 +51,11 @@ export default function AdminLogin({ onAuthenticated, onClose, theme = 'light', 
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (passkeyOnly || hasAdminPasskeyMarker()) {
+      setPasskeyOnly(true);
+      setPasskeyAutoFailed(true);
+      return;
+    }
     if (isLockedOut || isSubmitting) return;
 
     setIsSubmitting(true);
@@ -187,8 +192,8 @@ export default function AdminLogin({ onAuthenticated, onClose, theme = 'light', 
         {passkeyOnly ? (
           <div className="space-y-4">
             <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-center">
-              <p className="text-sm font-semibold text-[#1D4ED8]">Device unlock is enabled</p>
-              <p className="mt-1 text-xs leading-5 text-[#4A5568]">Admin Wen will use your registered fingerprint, Face ID, or device PIN.</p>
+              <p className="text-sm font-semibold text-[#1D4ED8]">Fingerprint unlock required</p>
+              <p className="mt-1 text-xs leading-5 text-[#4A5568]">Use your registered fingerprint, Face ID, or device PIN to open Admin Wen.</p>
             </div>
 
             {passkeyAutoFailed && <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-800" role="alert">The device prompt was not completed. Try again or use your administrator password.</p>}
@@ -198,7 +203,6 @@ export default function AdminLogin({ onAuthenticated, onClose, theme = 'light', 
               {isPasskeySubmitting ? 'Waiting for device unlock...' : 'Use device unlock'}
             </button>
 
-            <button type="button" onClick={() => { setPasskeyOnly(false); setPasskeyAutoFailed(false); }} className="w-full rounded-lg px-3 py-2 text-sm font-semibold text-[#4A5568] transition hover:bg-[#F4F3EF] hover:text-[#111214]">Use administrator password instead</button>
           </div>
         ) : (
           <>
