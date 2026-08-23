@@ -43,7 +43,7 @@ export default function OrderNotificationPrompt({ isAdmin = false, active = true
     if (nextPermission === 'granted') {
       await showOrderNotification({
         title: isAdmin ? 'Admin Wen notifications enabled' : 'WenAppliances notifications enabled',
-        body: isAdmin ? 'You will be alerted when a new order awaits confirmation.' : 'You will be alerted when your order is confirmed.',
+        body: isAdmin ? 'You will be alerted when a new order awaits confirmation or a customer cancels.' : 'You will be alerted when your order is confirmed or cancelled.',
         tag: `notifications-enabled-${isAdmin ? 'admin' : 'customer'}`,
         url: isAdmin ? '/orders' : '/track-order',
         icon: isAdmin ? '/admin-wen-logo.svg' : '/wenappliances-logo.svg'
@@ -71,7 +71,7 @@ export default function OrderNotificationPrompt({ isAdmin = false, active = true
         <div>
           <p className="font-bold">{isAdmin ? 'New order alerts' : 'Order updates'}</p>
           <p className={`mt-1 text-xs ${isAdmin ? 'text-slate-300' : 'text-[#4A5568]'}`}>
-            {isBlocked ? 'Notifications are blocked. Allow them in browser site settings.' : isAdmin ? 'Get a popup when a customer places an order.' : 'Get a popup when WenAppliances confirms your order.'}
+            {isBlocked ? 'Notifications are blocked. Allow them in browser site settings.' : isAdmin ? 'Get a popup when a customer places or cancels an order.' : 'Get a popup when WenAppliances confirms or cancels your order.'}
           </p>
         </div>
       </div>

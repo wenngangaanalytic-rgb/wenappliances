@@ -19,9 +19,9 @@ export function AdminOrderNotificationWatcher({ user }) {
     if (!isAuthorized) return undefined;
 
     let active = true;
-    const seenOrderIds = new Set();
+    const statusByOrderId = new Map();
 
-    const announce = (order) => {
+    const announceNewOrder = (order) => {
       const status = normalizeStatus(order?.status);
       if (!order?.id || !['pending', 'awaiting confirmation'].includes(status)) return;
 
@@ -34,20 +34,48 @@ export function AdminOrderNotificationWatcher({ user }) {
       });
     };
 
+    const announceCancellation = (order) => {
+      if (!order?.id) return;
+
+      void showOrderNotification({
+        title: 'Order cancelled by customer',
+        body: `${order.customer_name || 'A customer'} cancelled order ${order.id}. Stock has been restored where applicable.`,
+        tag: `admin-order-cancelled-${order.id}`,
+        url: '/orders',
+        icon: '/admin-wen-logo.svg'
+      });
+    };
+
+    const isCustomerCancellation = (order) => String(order?.cancellation_reason || '').trim().toLowerCase().includes('customer');
+
+    const processOrderChange = (order, { initial = false } = {}) => {
+      const orderId = String(order?.id || '').trim();
+      if (!orderId) return;
+
+      const currentStatus = normalizeStatus(order.status);
+      const previousStatus = statusByOrderId.get(orderId);
+
+      if (!initial && previousStatus === undefined && ['pending', 'awaiting confirmation'].includes(currentStatus)) {
+        announceNewOrder(order);
+      }
+
+      if (!initial && previousStatus && previousStatus !== currentStatus && currentStatus === 'cancelled' && isCustomerCancellation(order)) {
+        announceCancellation(order);
+      }
+
+      statusByOrderId.set(orderId, currentStatus);
+    };
+
     const checkForNewOrders = async (initial = false) => {
       const { data, error } = await supabase
         .from('orders')
-        .select('id, customer_name, total_amount, status, created_at')
+        .select('id, customer_name, total_amount, status, cancellation_reason, created_at')
         .order('created_at', { ascending: false })
         .limit(100);
 
       if (!active || error) return;
 
-      (data || []).forEach((order) => {
-        if (seenOrderIds.has(order.id)) return;
-        seenOrderIds.add(order.id);
-        if (!initial) announce(order);
-      });
+      (data || []).forEach((order) => processOrderChange(order, { initial }));
     };
 
     void checkForNewOrders(true);
@@ -55,9 +83,12 @@ export function AdminOrderNotificationWatcher({ user }) {
     const ordersChannel = supabase
       .channel(`admin-order-notifications-${Date.now()}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, (payload) => {
-        if (!active || seenOrderIds.has(payload.new?.id)) return;
-        seenOrderIds.add(payload.new?.id);
-        announce(payload.new);
+        if (!active) return;
+        processOrderChange(payload.new);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, (payload) => {
+        if (!active) return;
+        processOrderChange(payload.new);
       })
       .subscribe();
 
