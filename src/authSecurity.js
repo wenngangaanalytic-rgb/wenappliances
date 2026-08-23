@@ -17,7 +17,8 @@ export const isReservedSuperAdminEmail = (email) => (
 
 export const hasStrongCustomerPassword = (password) => (
   typeof password === 'string'
-  && password.length >= 8
+  && password.length >= 6
+  && password.length <= 15
   && /[a-z]/.test(password)
   && /[A-Z]/.test(password)
   && /\d/.test(password)
@@ -26,4 +27,4 @@ export const hasStrongCustomerPassword = (password) => (
 
 export const CUSTOMER_PORTAL_ADMIN_MESSAGE = 'This administrator account can only be used in the WenAppliances admin portal.';
 export const ADMIN_PORTAL_ROLE_MESSAGE = 'Administrator access is required. Customer accounts cannot sign in here.';
-export const STRONG_CUSTOMER_PASSWORD_MESSAGE = 'Use at least 8 characters with uppercase and lowercase letters, a number, and a special character.';
+export const STRONG_CUSTOMER_PASSWORD_MESSAGE = 'Use 6–15 characters with uppercase and lowercase letters, a number, and a special character.';
