@@ -1546,7 +1546,9 @@ const AdminDashboard = () => {
     const loadDashboard = async () => {
       const [ordersResult, productsResult] = await Promise.all([
         supabase.from('orders').select('id, customer_name, total_amount, status, created_at').order('created_at', { ascending: false }),
-        supabase.from('products').select('id, name, sku, stock, price, status').order('name')
+        // Keep this query compatible with the production products schema;
+        // SKU is not a column in the current table.
+        supabase.from('products').select('id, name, stock, price').order('name')
       ]);
 
       if (!active) return;

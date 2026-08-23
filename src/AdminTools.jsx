@@ -61,7 +61,10 @@ export default function AdminTools() {
     setError('');
 
     const [productsResult, ordersResult, membersResult] = await Promise.all([
-      supabase.from('products').select('id, name, sku, category, price, stock, status, created_at').order('name'),
+      // The production products table does not include a SKU column. Keep
+      // this query aligned with the live schema; SKU remains optional in CSV
+      // output and other admin views can still display a fallback value.
+      supabase.from('products').select('id, name, category, price, stock, created_at').order('name'),
       supabase.from('orders').select('id, customer_name, customer_email, total_amount, status, fulfillment_method, created_at').order('created_at', { ascending: false }),
       supabase.from('members').select('id, email, full_name, created_at').order('created_at', { ascending: false })
     ]);
@@ -102,11 +105,11 @@ export default function AdminTools() {
 
   const exportInventory = () => downloadCsv('wenappliances-inventory.csv', [
     { key: 'name', label: 'Product name' },
-    { key: 'sku', label: 'SKU' },
+    { key: 'sku', label: 'SKU (optional)' },
     { key: 'category', label: 'Category' },
     { key: 'price', label: 'Price USD' },
     { key: 'stock', label: 'Stock' },
-    { key: 'status', label: 'Status' },
+    { key: 'status', label: 'Status (optional)' },
     { key: 'created_at', label: 'Created' }
   ], products);
 
