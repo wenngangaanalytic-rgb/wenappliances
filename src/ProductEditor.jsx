@@ -10,8 +10,11 @@ const initialForm = {
   stock: ''
 };
 
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+
 const createUniqueFilePath = (file) => {
-  const extension = file.name.includes('.') ? `.${file.name.split('.').pop().toLowerCase()}` : '';
+  const extension = file.type === 'image/jpeg' ? '.jpg' : file.type === 'image/png' ? '.png' : file.type === 'image/webp' ? '.webp' : '.gif';
   const uniqueId = typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : Math.random().toString(36).slice(2);
   return `products/${Date.now()}-${uniqueId}${extension}`;
 };
@@ -30,7 +33,21 @@ export default function ProductEditor({ onSaved }) {
   };
 
   const handleFileChange = (event) => {
-    setSelectedFiles(Array.from(event.target.files ?? []));
+    const files = Array.from(event.target.files ?? []);
+    const invalidFile = files.find((file) => !ALLOWED_IMAGE_TYPES.has(file.type) || file.size > MAX_IMAGE_SIZE_BYTES);
+
+    if (invalidFile) {
+      const message = !ALLOWED_IMAGE_TYPES.has(invalidFile.type)
+        ? 'Only JPG, PNG, WEBP, and GIF images are allowed.'
+        : `${invalidFile.name} is larger than the 10 MB image limit.`;
+      setSelectedFiles([]);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      setError(message);
+      toast.error(message);
+      return;
+    }
+
+    setSelectedFiles(files);
     setError('');
     setSuccessMessage('');
   };
@@ -42,6 +59,15 @@ export default function ProductEditor({ onSaved }) {
 
     if (selectedFiles.length === 0) {
       const message = 'Please select at least one appliance image.';
+      setError(message);
+      toast.error(message);
+      return;
+    }
+
+    const price = Number(formData.price);
+    const stock = Number(formData.stock);
+    if (!Number.isFinite(price) || price < 0 || !Number.isFinite(stock) || !Number.isInteger(stock) || stock < 0) {
+      const message = 'Enter a valid non-negative price and whole-number stock quantity.';
       setError(message);
       toast.error(message);
       return;
@@ -76,8 +102,8 @@ export default function ProductEditor({ onSaved }) {
           name: formData.name.trim(),
           description: formData.description.trim(),
           category: formData.category,
-          price: Number(formData.price),
-          stock: Number(formData.stock),
+          price,
+          stock,
           images: imageUrls
         })
         .select()

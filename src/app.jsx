@@ -161,7 +161,14 @@ const getRouteFromLocation = () => {
   }
 };
 
-const isAdminApp = import.meta.env.MODE === 'admin';
+// The admin Vercel project can be Git-connected with its own build settings,
+// but hostname detection keeps the portal safe during a settings transition:
+// an admin hostname must never accidentally render the public storefront.
+const isAdminHost = typeof window !== 'undefined' && (
+  /^admin(?:[.-])/i.test(window.location.hostname) ||
+  window.location.hostname.includes('wenappliances-admin')
+);
+const isAdminApp = import.meta.env.MODE === 'admin' || isAdminHost;
 
 export default function App() {
   const adminBasePath = isAdminApp ? '' : '/hq-operations';
@@ -1354,7 +1361,7 @@ const AdminLayout = ({ children }) => {
   const { user, logout, navigate, currentRoute, theme, toggleTheme, adminBasePath } = useContext(AppContext);
   const [activeOrderCount, setActiveOrderCount] = useState(0);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
-  const storefrontUrl = import.meta.env.VITE_STOREFRONT_URL || '/';
+  const storefrontUrl = import.meta.env.VITE_STOREFRONT_URL || (isAdminApp ? 'https://wenappliances.vercel.app' : '/');
 
   useEffect(() => {
     let active = true;

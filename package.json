@@ -7,7 +7,7 @@
     "dev": "vite --mode storefront",
     "dev:storefront": "vite --mode storefront",
     "dev:admin": "vite --mode admin",
-    "build": "npm run build:storefront",
+    "build": "node scripts/build-for-vercel.mjs",
     "build:storefront": "vite build --mode storefront",
     "build:admin": "vite build --mode admin",
     "preview": "vite preview"

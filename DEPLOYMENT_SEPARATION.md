@@ -6,6 +6,8 @@ The project now supports two independently buildable Vite applications from the 
 - Admin portal: `npm run build:admin` → `dist/admin`
 - Admin tools: live Supabase dashboard metrics, low-stock watchlist, refresh, and CSV exports for inventory, orders, and members.
 
+The default Vercel build command is `npm run build`. It detects the admin Vercel project from Vercel's built-in `VERCEL_PROJECT_ID`, builds the admin mode, and copies the admin output into `dist` so the admin project works even when its output directory is set to the default `dist`.
+
 Both applications use the same Supabase project and the browser-safe publishable/anon key. No service-role key belongs in either deployment.
 
 ## Local testing
@@ -35,8 +37,8 @@ The root `vercel.json` intentionally contains only the SPA rewrite. Build comman
 
 ### Admin portal project
 
-- Build Command: `npm run build:admin`
-- Output Directory: `dist/admin`
+- Build Command: `npm run build`
+- Output Directory: `dist`
 - Environment Variables:
   - `VITE_SUPABASE_URL`
   - `VITE_SUPABASE_ANON_KEY` or `VITE_SUPABASE_PUBLISHABLE_KEY`
