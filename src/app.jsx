@@ -27,14 +27,22 @@ import {
   isSuperAdminUser
 } from './authSecurity';
 
+// The admin deployment has a deliberately different name and blue identity so
+// it cannot be mistaken for the customer storefront when installed.
+const isAdminHost = typeof window !== 'undefined' && (
+  /^admin(?:[.-])/i.test(window.location.hostname) ||
+  window.location.hostname.includes('wenappliances-admin')
+);
+const isAdminApp = import.meta.env.MODE === 'admin' || isAdminHost;
+
 // --- BRANDING ---
 const Logo = ({ className = "", dark = false }) => (
   <div className={`flex items-center gap-2 ${className}`}>
-    <div className="w-8 h-8 rounded-bl-xl rounded-tr-xl bg-[#9C6644] flex items-center justify-center text-white font-serif italic text-xl shadow-sm">
+    <div className={`w-8 h-8 rounded-bl-xl rounded-tr-xl ${isAdminApp ? 'bg-[#2563EB]' : 'bg-[#9C6644]'} flex items-center justify-center text-white font-serif italic text-xl shadow-sm`}>
       W
     </div>
     <span className={`font-extrabold tracking-tight text-xl ${dark ? 'text-white' : 'text-[#111214]'}`}>
-      Wen<span className="text-[#9C6644] font-normal">Appliances</span>
+      {isAdminApp ? <>Admin<span className="text-[#2563EB] font-normal"> Wen</span></> : <>Wen<span className="text-[#9C6644] font-normal">Appliances</span></>}
     </span>
   </div>
 );
@@ -166,15 +174,6 @@ const getRouteFromLocation = () => {
     return '/';
   }
 };
-
-// The admin Vercel project can be Git-connected with its own build settings,
-// but hostname detection keeps the portal safe during a settings transition:
-// an admin hostname must never accidentally render the public storefront.
-const isAdminHost = typeof window !== 'undefined' && (
-  /^admin(?:[.-])/i.test(window.location.hostname) ||
-  window.location.hostname.includes('wenappliances-admin')
-);
-const isAdminApp = import.meta.env.MODE === 'admin' || isAdminHost;
 
 export default function App() {
   const adminBasePath = isAdminApp ? '' : '/hq-operations';

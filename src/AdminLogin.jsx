@@ -103,7 +103,7 @@ export default function AdminLogin({ onAuthenticated, onClose, theme = 'light', 
           <X className="h-5 w-5" aria-hidden="true" />
         </button>
         <div className="mb-8">
-          <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-[#9C6644]"><Lock className="h-4 w-4" aria-hidden="true" /> WenAppliances</p>
+          <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-[#2563EB]"><Lock className="h-4 w-4" aria-hidden="true" /> Admin Wen</p>
           <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#111214]">Administrator sign in</h1>
           <p className="mt-2 text-sm text-[#4A5568]">Use your Supabase Auth administrator account.</p>
         </div>
