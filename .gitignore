@@ -3,3 +3,8 @@ dist/
 .env
 .env.*
 !.env.example
+
+# Local IDE settings and Android build output
+.idea/
+android/.gradle/
+android/**/build/
