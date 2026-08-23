@@ -3,6 +3,7 @@ import { Eye, EyeOff, Fingerprint, Lock, Moon, Sun, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 import { isSuperAdminUser } from './authSecurity';
+import { hasAdminPasskeyMarker, markAdminPasskeyRegistered } from './adminPasskeyState';
 
 const MAX_FAILED_ATTEMPTS = 3;
 const LOCKOUT_DURATION_SECONDS = 30;
@@ -18,6 +19,8 @@ export default function AdminLogin({ onAuthenticated, onClose, theme = 'light', 
   const [passkeySupported, setPasskeySupported] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [passkeyOnly, setPasskeyOnly] = useState(() => hasAdminPasskeyMarker());
+  const [passkeyAutoFailed, setPasskeyAutoFailed] = useState(false);
   const passkeyAutoAttemptedRef = useRef(false);
 
   const isLockedOut = lockoutSeconds > 0;
@@ -122,12 +125,17 @@ export default function AdminLogin({ onAuthenticated, onClose, theme = 'light', 
 
       setFailedAttempts(0);
       setLockoutSeconds(0);
+      markAdminPasskeyRegistered();
+      setPasskeyOnly(true);
       onAuthenticated?.(data?.session);
     } catch (passkeyError) {
       // Browser/device cancellation or an unregistered device should leave
       // the password form available, especially for the automatic attempt.
       // Only an intentional retry counts toward the password-style lockout.
-      if (automatic) return;
+      if (automatic) {
+        setPasskeyAutoFailed(true);
+        return;
+      }
 
       const nextFailedAttempts = failedAttempts + 1;
 
@@ -176,53 +184,72 @@ export default function AdminLogin({ onAuthenticated, onClose, theme = 'light', 
 
         {error && <div className="mb-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert" aria-live="assertive">{error}</div>}
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label htmlFor="admin-email" className="mb-2 block text-sm font-semibold text-[#111214]">Email</label>
-            <input id="admin-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" required className="w-full rounded-lg border border-[#E5E4E0] px-3 py-2.5 outline-none transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20" />
-          </div>
-
-          <div>
-            <label htmlFor="admin-password" className="mb-2 block text-sm font-semibold text-[#111214]">Password</label>
-            <div className="relative">
-              <input
-                id="admin-password"
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete="current-password"
-                required
-                className="w-full rounded-lg border border-[#E5E4E0] px-3 py-2.5 pr-11 outline-none transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((visible) => !visible)}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                title={showPassword ? 'Hide password' : 'Show password'}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-2 text-[#4A5568] transition hover:bg-[#F4F3EF] hover:text-[#111214] focus:outline-none focus:ring-2 focus:ring-[#9C6644]/40"
-              >
-                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-              </button>
+        {passkeyOnly ? (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-center">
+              <p className="text-sm font-semibold text-[#1D4ED8]">Device unlock is enabled</p>
+              <p className="mt-1 text-xs leading-5 text-[#4A5568]">Admin Wen will use your registered fingerprint, Face ID, or device PIN.</p>
             </div>
-          </div>
 
-          {isLockedOut && <p className="rounded-lg bg-[#F4F3EF] p-3 text-center text-sm font-semibold text-[#4A5568]" role="status" aria-live="polite">Login locked. Try again in {lockoutSeconds} seconds.</p>}
+            {passkeyAutoFailed && <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-800" role="alert">The device prompt was not completed. Try again or use your administrator password.</p>}
 
-          <button type="submit" disabled={isSubmitting || isLockedOut} className="flex w-full items-center justify-center gap-2 rounded-lg bg-gray-900 px-4 py-3 font-semibold text-white transition-all duration-200 hover:-translate-y-1 hover:bg-gray-800 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none">
-            {isSubmitting && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" aria-hidden="true" />}
-            {isSubmitting ? 'Signing in...' : isLockedOut ? `Locked for ${lockoutSeconds}s` : 'Sign in'}
-          </button>
-        </form>
-
-        {passkeySupported && (
-          <div className="mt-5 border-t border-[#E5E4E0] pt-5">
-            <p className="mb-3 text-center text-xs text-[#4A5568]">Or use your device unlock</p>
-            <button type="button" onClick={handlePasskeySignIn} disabled={isSubmitting || isPasskeySubmitting || isLockedOut} className="flex w-full items-center justify-center gap-2 rounded-lg border border-[#2563EB]/40 bg-[#EFF6FF] px-4 py-3 font-semibold text-[#1D4ED8] transition-all duration-200 hover:-translate-y-1 hover:bg-[#DBEAFE] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none">
-              {isPasskeySubmitting ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#1D4ED8] border-t-transparent" aria-hidden="true" /> : <Fingerprint className="h-5 w-5" aria-hidden="true" />}
-              {isPasskeySubmitting ? 'Waiting for device unlock...' : 'Use Face ID, fingerprint, or PIN'}
+            <button type="button" onClick={() => { setPasskeyAutoFailed(false); void handlePasskeySignIn(); }} disabled={isPasskeySubmitting || isLockedOut} className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white transition-all duration-200 hover:-translate-y-1 hover:bg-blue-500 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50">
+              {isPasskeySubmitting && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" aria-hidden="true" />}
+              {isPasskeySubmitting ? 'Waiting for device unlock...' : 'Use device unlock'}
             </button>
-            <p className="mt-2 text-center text-[11px] leading-5 text-[#858884]">First register a passkey from inside Admin Wen after signing in with your password.</p>
+
+            <button type="button" onClick={() => { setPasskeyOnly(false); setPasskeyAutoFailed(false); }} className="w-full rounded-lg px-3 py-2 text-sm font-semibold text-[#4A5568] transition hover:bg-[#F4F3EF] hover:text-[#111214]">Use administrator password instead</button>
           </div>
+        ) : (
+          <>
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div>
+                <label htmlFor="admin-email" className="mb-2 block text-sm font-semibold text-[#111214]">Email</label>
+                <input id="admin-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" required className="w-full rounded-lg border border-[#E5E4E0] px-3 py-2.5 outline-none transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20" />
+              </div>
+
+              <div>
+                <label htmlFor="admin-password" className="mb-2 block text-sm font-semibold text-[#111214]">Password</label>
+                <div className="relative">
+                  <input
+                    id="admin-password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    autoComplete="current-password"
+                    required
+                    className="w-full rounded-lg border border-[#E5E4E0] px-3 py-2.5 pr-11 outline-none transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((visible) => !visible)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-2 text-[#4A5568] transition hover:bg-[#F4F3EF] hover:text-[#111214] focus:outline-none focus:ring-2 focus:ring-[#9C6644]/40"
+                  >
+                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
+                </div>
+              </div>
+
+              {isLockedOut && <p className="rounded-lg bg-[#F4F3EF] p-3 text-center text-sm font-semibold text-[#4A5568]" role="status" aria-live="polite">Login locked. Try again in {lockoutSeconds} seconds.</p>}
+
+              <button type="submit" disabled={isSubmitting || isLockedOut} className="flex w-full items-center justify-center gap-2 rounded-lg bg-gray-900 px-4 py-3 font-semibold text-white transition-all duration-200 hover:-translate-y-1 hover:bg-gray-800 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none">
+                {isSubmitting && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" aria-hidden="true" />}
+                {isSubmitting ? 'Signing in...' : isLockedOut ? `Locked for ${lockoutSeconds}s` : 'Sign in'}
+              </button>
+            </form>
+
+            {passkeySupported && (
+              <div className="mt-5 border-t border-[#E5E4E0] pt-5">
+                <p className="mb-3 text-center text-xs text-[#4A5568]">Use your device unlock</p>
+                <button type="button" onClick={() => void handlePasskeySignIn()} disabled={isSubmitting || isPasskeySubmitting || isLockedOut} className="flex w-full items-center justify-center gap-2 rounded-lg border border-[#2563EB]/40 bg-[#EFF6FF] px-4 py-3 font-semibold text-[#1D4ED8] transition-all duration-200 hover:-translate-y-1 hover:bg-[#DBEAFE] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none">
+                  {isPasskeySubmitting ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-[#1D4ED8] border-t-transparent" aria-hidden="true" /> : <Fingerprint className="h-5 w-5" aria-hidden="true" />}
+                  {isPasskeySubmitting ? 'Waiting for device unlock...' : 'Use Face ID, fingerprint, or PIN'}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </section>
     </main>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { KeyRound, ShieldCheck, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from './supabaseClient';
+import { clearAdminPasskeyMarker, hasAdminPasskeyMarker, markAdminPasskeyRegistered } from './adminPasskeyState';
 
 const supportsPasskeys = () => (
   typeof window !== 'undefined'
@@ -36,13 +37,19 @@ export default function AdminPasskeySettings({ user }) {
     const { data, error: listError } = await supabase.auth.passkey.list();
     if (listError) {
       setError(listError.message || 'Passkeys are not enabled for this project yet.');
-      setIsOpen(true);
+      setIsOpen(!hasAdminPasskeyMarker());
     } else {
       const registeredPasskeys = Array.isArray(data) ? data : [];
       setPasskeys(registeredPasskeys);
       // Keep the setup prompt present on every fresh admin session until at
       // least one device unlock has been registered.
-      setIsOpen(registeredPasskeys.length === 0);
+      if (registeredPasskeys.length > 0) {
+        markAdminPasskeyRegistered();
+        setIsOpen(false);
+      } else {
+        clearAdminPasskeyMarker();
+        setIsOpen(true);
+      }
     }
     setLoading(false);
   };
@@ -62,6 +69,7 @@ export default function AdminPasskeySettings({ user }) {
         setError(registerError.message || 'Unable to register this device.');
         toast.error(registerError.message || 'Unable to register this device.');
       } else {
+        markAdminPasskeyRegistered();
         toast.success('Device unlock added for Admin Wen.');
         setIsOpen(false);
         await loadPasskeys();
