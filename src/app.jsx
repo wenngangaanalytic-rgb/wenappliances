@@ -19,6 +19,7 @@ import AdminTools from './AdminTools';
 import AccountMenu from './AccountMenu';
 import ResetPassword from './ResetPassword';
 import PresenceTracker from './PresenceTracker';
+import PwaInstallPrompt from './PwaInstallPrompt';
 import { SUPPORT_EMAIL, SUPPORT_PHONE } from './businessInfo';
 import {
   ADMIN_PORTAL_ROLE_MESSAGE,
@@ -538,6 +539,7 @@ export default function App() {
       <div className="min-h-screen font-sans bg-[#F4F3EF] text-[#111214] antialiased">
         {renderRoute()}
       </div>
+      {!isAdminApp && <PwaInstallPrompt />}
       <PresenceTracker user={user} />
     </AppContext.Provider>
   );

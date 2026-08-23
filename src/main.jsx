@@ -17,3 +17,11 @@ createRoot(document.getElementById('root')).render(
     <SpeedInsights />
   </React.StrictMode>
 );
+
+if (import.meta.env.MODE === 'storefront' && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js').catch((error) => {
+      console.warn('WenAppliances offline shell could not be registered.', error);
+    });
+  });
+}
