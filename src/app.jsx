@@ -5,7 +5,7 @@ import {
   Package, LayoutDashboard, Settings, LogOut, 
   TrendingUp, Users, DollarSign, Edit, Trash2, Plus,
   ShieldCheck, AlertTriangle, CheckCircle2, Lock,
-  Printer, Download, ImagePlus, Moon, Sun
+  Printer, Download, ImagePlus, Moon, Sun, GripVertical, Star
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import SecureAdminLogin from './AdminLogin';
@@ -508,6 +508,15 @@ const StoreLayout = ({ children }) => {
   const { cartItemCount, setIsCartOpen, navigate, user, searchQuery, setSearchQuery, setActiveCategory, productsLoading, productsError, loadProducts, theme, toggleTheme } = useContext(AppContext);
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [contactSent, setContactSent] = useState(false);
+  const [newsletterEmail, setNewsletterEmail] = useState('');
+  const [newsletterMessage, setNewsletterMessage] = useState('');
+
+  const handleNewsletterSubmit = (event) => {
+    event.preventDefault();
+    if (!newsletterEmail.trim()) return;
+    setNewsletterMessage('Thanks! Newsletter updates are coming soon 😔');
+    setNewsletterEmail('');
+  };
   
   const handleNav = (path, clearFilters = false) => {
     if (clearFilters) {
@@ -610,10 +619,12 @@ const StoreLayout = ({ children }) => {
           <div>
             <h3 className="font-semibold mb-4 text-[#F1F1EF]">Newsletter</h3>
             <p className="text-[#B8BAB7] text-sm mb-4">Subscribe for updates on new arrivals and offers.</p>
-            <div className="flex">
-              <input type="email" placeholder="Email address" className="bg-[#1D2023] border border-[#24272A] px-3 py-2 rounded-l-md text-sm w-full focus:outline-none focus:border-[#9C6644]" />
-              <button className="bg-[#9C6644] hover:bg-[#8A5A3C] text-white px-4 py-2 rounded-r-md text-sm font-medium transition-colors">Subscribe</button>
-            </div>
+            <form onSubmit={handleNewsletterSubmit} className="flex">
+              <label htmlFor="newsletter-email" className="sr-only">Email address</label>
+              <input id="newsletter-email" type="email" required value={newsletterEmail} onChange={(event) => { setNewsletterEmail(event.target.value); setNewsletterMessage(''); }} placeholder="Email address" className="min-w-0 bg-[#1D2023] border border-[#24272A] px-3 py-2 rounded-l-md text-sm w-full focus:outline-none focus:border-[#9C6644]" />
+              <button type="submit" className="shrink-0 bg-[#9C6644] hover:bg-[#8A5A3C] text-white px-4 py-2 rounded-r-md text-sm font-medium transition-colors">Subscribe</button>
+            </form>
+            {newsletterMessage && <p className="mt-2 text-xs font-medium text-[#D8B49A]" role="status" aria-live="polite">{newsletterMessage}</p>}
           </div>
         </div>
         
@@ -1122,6 +1133,7 @@ const StoreProductDetail = ({ id }) => {
             <div className="grid grid-cols-1 gap-3 text-sm text-[#4A5568] pt-4 border-t border-[#E5E4E0] sm:grid-cols-2">
               <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 shrink-0 text-[#9C6644]"/> 3 Months Warranty</div>
               <div className="flex items-center gap-2"><Package className="h-4 w-4 shrink-0 text-[#9C6644]"/> Delivery is offered</div>
+              <div className="flex items-center gap-2 sm:col-span-2"><Trash2 className="h-4 w-4 shrink-0 text-[#9C6644]"/> Old appliance haul-away offered</div>
             </div>
           </div>
         </div>
@@ -1783,6 +1795,7 @@ const ProductEditor = ({ product, onSave, onCancel }) => {
   const [formData, setFormData] = useState({ ...product });
   const [coverFile, setCoverFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [draggedGalleryIndex, setDraggedGalleryIndex] = useState(null);
   
   // Initialize gallery state (max 10 images)
   const [gallery, setGallery] = useState(
@@ -1811,6 +1824,21 @@ const ProductEditor = ({ product, onSave, onCancel }) => {
 
   const removeGalleryImage = (index) => {
     setGallery(gallery.filter((_, i) => i !== index));
+  };
+
+  const moveGalleryImage = (fromIndex, toIndex) => {
+    if (fromIndex === toIndex || toIndex < 0 || toIndex >= gallery.length) return;
+    setGallery((current) => {
+      const next = [...current];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  };
+
+  const makeCoverImage = (index) => {
+    if (!gallery[index]?.trim() || index === 0) return;
+    moveGalleryImage(index, 0);
   };
 
   const handleFormSubmit = async (e) => {
@@ -1943,7 +1971,7 @@ const ProductEditor = ({ product, onSave, onCancel }) => {
                  <p className="mt-2 text-xs text-[#858884]">{coverFile ? `Ready to upload: ${coverFile.name}` : 'Choose a new image to make it the primary cover.'}</p>
                </div>
                
-               <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+               <div className="space-y-3 max-h-72 overflow-y-auto pr-2">
                  {gallery.map((url, idx) => (
                    <div key={idx} className="flex gap-2 items-start">
                       <div className="grow">
@@ -1964,14 +1992,52 @@ const ProductEditor = ({ product, onSave, onCancel }) => {
                  ))}
                </div>
                
-               {/* Gallery Preview Row */}
-               <div className="flex gap-3 overflow-x-auto pt-2 pb-2 mt-4">
-                 {gallery.map((url, idx) => url ? (
-                   <div key={idx} className={`relative shrink-0 rounded overflow-hidden border-2 bg-white ${idx === 0 ? 'border-[#9C6644]' : 'border-[#24272A]'}`}>
-                     {idx === 0 && <span className="absolute top-0 left-0 bg-[#9C6644] text-white text-[9px] font-bold px-1 rounded-br">COVER</span>}
-                      <img src={url} alt={`Preview ${idx}`} className="product-photo h-20 w-20 object-cover" />
-                   </div>
-                 ) : null)}
+               {/* Reorderable Gallery Preview */}
+               <div className="mt-4 rounded-lg border border-[#24272A] bg-[#0B0B0C] p-3">
+                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                   <p className="text-xs text-[#858884]">Drag photos to rearrange them. The first photo is the cover.</p>
+                   <span className="text-xs font-semibold text-[#9C6644]">Cover = first photo</span>
+                 </div>
+                 <div className="grid max-h-80 grid-cols-2 gap-4 overflow-y-auto pr-1 sm:grid-cols-3">
+                   {gallery.map((url, idx) => url ? (
+                     <div
+                       key={`${idx}-${url}`}
+                       draggable
+                       onDragStart={() => setDraggedGalleryIndex(idx)}
+                       onDragOver={(event) => event.preventDefault()}
+                       onDrop={() => {
+                         if (draggedGalleryIndex !== null) moveGalleryImage(draggedGalleryIndex, idx);
+                         setDraggedGalleryIndex(null);
+                       }}
+                       onDragEnd={() => setDraggedGalleryIndex(null)}
+                       className={`group relative overflow-hidden rounded-xl border-2 bg-white transition ${
+                         idx === 0 ? 'border-[#9C6644] shadow-lg shadow-[#9C6644]/20' : 'border-[#24272A]'
+                       } ${draggedGalleryIndex === idx ? 'opacity-50' : ''}`}
+                     >
+                       <div className="relative aspect-square">
+                         <img src={url} alt={`Preview ${idx + 1}`} className="product-photo h-full w-full object-cover" />
+                         <span className="absolute left-2 top-2 rounded bg-black/70 px-2 py-1 text-[10px] font-bold text-white">
+                           {idx === 0 ? 'COVER' : `PHOTO ${idx + 1}`}
+                         </span>
+                         <span className="absolute right-2 top-2 rounded bg-black/60 p-1 text-white" title="Drag to rearrange">
+                           <GripVertical className="h-4 w-4" />
+                         </span>
+                       </div>
+                       <div className="flex items-center justify-between gap-2 bg-[#17191C] p-2">
+                         {idx === 0 ? (
+                           <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#D8B49A]"><Star className="h-3 w-3 fill-current" /> Cover photo</span>
+                         ) : (
+                           <button type="button" onClick={() => makeCoverImage(idx)} className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-semibold text-[#B8BAB7] hover:bg-[#24272A] hover:text-white">
+                             <Star className="h-3 w-3" /> Set cover
+                           </button>
+                         )}
+                         <button type="button" onClick={() => removeGalleryImage(idx)} className="rounded p-1 text-[#858884] transition-colors hover:bg-[#24272A] hover:text-red-400" aria-label={`Remove photo ${idx + 1}`}>
+                           <Trash2 className="h-4 w-4" />
+                         </button>
+                       </div>
+                     </div>
+                   ) : null)}
+                 </div>
                </div>
             </div>
           </div>
