@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Eye, EyeOff, Lock, Moon, Sun, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from './supabaseClient';
+import { isSuperAdminUser } from './authSecurity';
 
 const MAX_FAILED_ATTEMPTS = 3;
 const LOCKOUT_DURATION_SECONDS = 30;
@@ -62,13 +63,24 @@ export default function AdminLogin({ onAuthenticated, onClose, theme = 'light', 
       return;
     }
 
-    // Only app_metadata is trusted for authorization. user_metadata can be edited by the user.
-    const role = data.user?.app_metadata?.role;
+    // Re-read the authenticated user from Supabase before granting portal
+    // access. Only app_metadata is trusted for authorization; user_metadata
+    // can be edited by the user.
+    const { data: verifiedUserData, error: verifiedUserError } = await supabase.auth.getUser();
+    const verifiedUser = verifiedUserData?.user || data.user;
 
-    if (role !== 'SUPER_ADMIN') {
+    if (verifiedUserError || !isSuperAdminUser(verifiedUser)) {
       await supabase.auth.signOut();
+      const nextFailedAttempts = failedAttempts + 1;
+      if (nextFailedAttempts >= MAX_FAILED_ATTEMPTS) {
+        setFailedAttempts(0);
+        setLockoutSeconds(LOCKOUT_DURATION_SECONDS);
+        setError(`Too many failed attempts. Try again in ${LOCKOUT_DURATION_SECONDS} seconds.`);
+      } else {
+        setFailedAttempts(nextFailedAttempts);
+        setError(`Administrator access is required. ${MAX_FAILED_ATTEMPTS - nextFailedAttempts} attempt(s) remaining.`);
+      }
       setIsSubmitting(false);
-      setError('Your password is correct, but this account is not configured as a SUPER_ADMIN administrator. Add the role in Supabase Auth metadata, then sign in again.');
       return;
     }
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useMemo, useReducer } from 'react';
+import React, { useState, useEffect, useContext, useMemo, useReducer, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { 
   ShoppingCart, Search, Menu, X, User, ChevronRight, 
@@ -20,6 +20,11 @@ import AccountMenu from './AccountMenu';
 import ResetPassword from './ResetPassword';
 import PresenceTracker from './PresenceTracker';
 import { SUPPORT_EMAIL, SUPPORT_PHONE } from './businessInfo';
+import {
+  ADMIN_PORTAL_ROLE_MESSAGE,
+  CUSTOMER_PORTAL_ADMIN_MESSAGE,
+  isSuperAdminUser
+} from './authSecurity';
 
 // --- BRANDING ---
 const Logo = ({ className = "", dark = false }) => (
@@ -146,7 +151,7 @@ const mapAuthUser = (authUser) => {
     id: authUser.id,
     email: authUser.email || '',
     // Authorization roles must come from trusted app_metadata, never user-editable user_metadata.
-    role: authUser.app_metadata?.role || 'CUSTOMER',
+    role: String(authUser.app_metadata?.role || 'CUSTOMER').trim().toUpperCase(),
     name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'User'
   };
 };
@@ -197,16 +202,53 @@ export default function App() {
   // Cart State
   const [cart, setCart] = useState([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const rejectedSessionRef = useRef('');
+  const signOutScheduledRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (mounted) setUser(mapAuthUser(session?.user));
-    });
+    const syncSession = (session, announce = false) => {
+      if (!mounted) return;
+
+      const authUser = session?.user;
+      if (!authUser) {
+        setUser(null);
+        return;
+      }
+
+      const isSuperAdmin = isSuperAdminUser(authUser);
+      const isWrongPortal = isAdminApp ? !isSuperAdmin : isSuperAdmin;
+      if (isWrongPortal) {
+        setUser(null);
+
+        const rejectedKey = `${isAdminApp ? 'admin' : 'storefront'}:${authUser.id}`;
+        if (announce && rejectedSessionRef.current !== rejectedKey) {
+          rejectedSessionRef.current = rejectedKey;
+          toast.error(isAdminApp ? ADMIN_PORTAL_ROLE_MESSAGE : CUSTOMER_PORTAL_ADMIN_MESSAGE);
+        }
+
+        // Do not await signOut inside onAuthStateChange; Supabase warns that
+        // doing so can deadlock the auth event callback.
+        if (!signOutScheduledRef.current) {
+          signOutScheduledRef.current = true;
+          window.setTimeout(() => {
+            supabase.auth.signOut().finally(() => {
+              signOutScheduledRef.current = false;
+            });
+          }, 0);
+        }
+        return;
+      }
+
+      rejectedSessionRef.current = '';
+      setUser(mapAuthUser(authUser));
+    };
+
+    supabase.auth.getSession().then(({ data: { session } }) => syncSession(session, true));
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(mapAuthUser(session?.user));
+      syncSession(session, true);
     });
 
     return () => {
@@ -422,12 +464,14 @@ export default function App() {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error || !data.user) return false;
 
-    const signedInUser = mapAuthUser(data.user);
-    if (signedInUser.role !== 'SUPER_ADMIN') {
+    const { data: verifiedUserData, error: verifiedUserError } = await supabase.auth.getUser();
+    const verifiedUser = verifiedUserData?.user || data.user;
+    if (verifiedUserError || !isSuperAdminUser(verifiedUser)) {
       await supabase.auth.signOut();
       return false;
     }
 
+    const signedInUser = mapAuthUser(verifiedUser);
     setUser(signedInUser);
     return true;
   };
@@ -1306,68 +1350,6 @@ const StoreCheckout = () => {
 // Theme: "Charcoal Dashboard" (Dark bg, Off-white text, Copper accents)
 // STRICTLY SEPARATE VISUAL IDENTITY from Storefront
 // ============================================================================
-
-const AdminLogin = () => {
-  const { login, navigate } = useContext(AppContext);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setError('');
-
-    try {
-      if (await login(email, password)) {
-        navigate('/hq-operations/dashboard');
-      } else {
-        setError('Invalid credentials or insufficient permissions.');
-      }
-    } catch (loginError) {
-      setError(loginError.message || 'Unable to sign in.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-[#0B0B0C] flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-md bg-[#17191C] border border-[#24272A] rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-300">
-        <div className="p-8 pb-6 border-b border-[#24272A] flex flex-col items-center">
-          <Logo dark={true} className="mb-2 scale-110 origin-center" />
-          <p className="text-center text-[#858884] text-sm mt-2 flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-[#9C6644]" /> HQ Operations Portal
-          </p>
-        </div>
-        <form onSubmit={handleLogin} className="p-8 space-y-6">
-          {error && <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-3 rounded text-sm text-center">{error}</div>}
-          <div>
-            <label className="block text-[#B8BAB7] text-sm font-medium mb-2">Admin Email</label>
-            <input 
-              type="email" value={email} onChange={e=>setEmail(e.target.value)} required
-              className="w-full bg-[#0B0B0C] border border-[#24272A] rounded-lg px-4 py-3 text-[#F1F1EF] focus:outline-none focus:border-[#9C6644] focus:ring-1 focus:ring-[#9C6644] transition-all"
-            />
-          </div>
-          <div>
-            <label className="block text-[#B8BAB7] text-sm font-medium mb-2">Master Password</label>
-            <input 
-              type="password" value={password} onChange={e=>setPassword(e.target.value)} required
-              className="w-full bg-[#0B0B0C] border border-[#24272A] rounded-lg px-4 py-3 text-[#F1F1EF] focus:outline-none focus:border-[#9C6644] focus:ring-1 focus:ring-[#9C6644] transition-all"
-            />
-          </div>
-          <button type="submit" disabled={isSubmitting} className="w-full bg-[#9C6644] hover:bg-[#8A5A3C] text-white py-3 rounded-lg font-bold transition-colors disabled:opacity-60">
-            {isSubmitting ? 'Signing in...' : 'Sign in securely'}
-          </button>
-        </form>
-      </div>
-      <button onClick={() => navigate('/')} className="mt-8 text-[#858884] hover:text-[#F1F1EF] text-sm transition-colors flex items-center gap-2">
-        <ChevronRight className="h-4 w-4 rotate-180" /> Back to Public Store
-      </button>
-    </div>
-  );
-};
 
 const AdminLayout = ({ children }) => {
   const { user, logout, navigate, currentRoute, theme, toggleTheme, adminBasePath } = useContext(AppContext);

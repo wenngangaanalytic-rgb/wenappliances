@@ -2,6 +2,13 @@ import { useState } from 'react';
 import { ClipboardList, Eye, EyeOff, KeyRound, LogIn, LogOut, UserRound, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from './supabaseClient';
+import {
+  CUSTOMER_PORTAL_ADMIN_MESSAGE,
+  hasStrongCustomerPassword,
+  isReservedSuperAdminEmail,
+  isSuperAdminUser,
+  STRONG_CUSTOMER_PASSWORD_MESSAGE
+} from './authSecurity';
 
 const initialForm = { name: '', email: '', password: '' };
 
@@ -24,8 +31,20 @@ export default function AccountMenu({ user, onTrackOrder, onMyOrders }) {
     setLoading(true);
 
     try {
+      const email = formData.email.trim().toLowerCase();
+
+      // The SUPER_ADMIN identity is reserved for the separate administrator
+      // portal. Reject it before any customer Auth request is made.
+      if (isReservedSuperAdminEmail(email)) {
+        throw new Error(CUSTOMER_PORTAL_ADMIN_MESSAGE);
+      }
+
+      if (mode === 'signup' && !hasStrongCustomerPassword(formData.password)) {
+        throw new Error(STRONG_CUSTOMER_PASSWORD_MESSAGE);
+      }
+
       if (mode === 'reset') {
-        const { error } = await supabase.auth.resetPasswordForEmail(formData.email.trim(), {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: `${window.location.origin}/?reset-password=1`
         });
 
@@ -35,12 +54,19 @@ export default function AccountMenu({ user, onTrackOrder, onMyOrders }) {
         setFormData((current) => ({ ...current, password: '' }));
       } else if (mode === 'signup') {
         const { data, error } = await supabase.auth.signUp({
-          email: formData.email.trim(),
+          email,
           password: formData.password,
           options: { data: { name: formData.name.trim() } }
         });
 
         if (error) throw error;
+
+        // Defense in depth for any future administrator identity: never keep
+        // an administrator session in the customer application.
+        if (isSuperAdminUser(data.user)) {
+          await supabase.auth.signOut();
+          throw new Error(CUSTOMER_PORTAL_ADMIN_MESSAGE);
+        }
 
         if (data.session) {
           toast.success('Your WenAppliances account is ready.');
@@ -52,11 +78,19 @@ export default function AccountMenu({ user, onTrackOrder, onMyOrders }) {
         }
       } else {
         const { error } = await supabase.auth.signInWithPassword({
-          email: formData.email.trim(),
+          email,
           password: formData.password
         });
 
         if (error) throw error;
+
+        const { data: verifiedUserData, error: verifiedUserError } = await supabase.auth.getUser();
+        if (verifiedUserError) throw verifiedUserError;
+        if (isSuperAdminUser(verifiedUserData.user)) {
+          await supabase.auth.signOut();
+          throw new Error(CUSTOMER_PORTAL_ADMIN_MESSAGE);
+        }
+
         toast.success('Welcome back.');
         closeMenu();
       }
@@ -117,11 +151,12 @@ export default function AccountMenu({ user, onTrackOrder, onMyOrders }) {
                 {mode === 'signup' && <input name="name" value={formData.name} onChange={(event) => setFormData((current) => ({ ...current, name: event.target.value }))} required placeholder="Full name" autoComplete="name" className="w-full rounded-lg border border-[#E5E4E0] px-3 py-2 text-sm outline-none focus:border-[#9C6644]" />}
                 <input name="email" type="email" value={formData.email} onChange={(event) => setFormData((current) => ({ ...current, email: event.target.value }))} required placeholder="Email address" autoComplete="email" className="w-full rounded-lg border border-[#E5E4E0] px-3 py-2 text-sm outline-none focus:border-[#9C6644]" />
                 {mode !== 'reset' && <div className="relative">
-                  <input name="password" type={showPassword ? 'text' : 'password'} minLength={6} value={formData.password} onChange={(event) => setFormData((current) => ({ ...current, password: event.target.value }))} required placeholder="Password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} className="w-full rounded-lg border border-[#E5E4E0] px-3 py-2 pr-10 text-sm outline-none focus:border-[#9C6644]" />
+                  <input name="password" type={showPassword ? 'text' : 'password'} minLength={mode === 'signup' ? 8 : 6} value={formData.password} onChange={(event) => setFormData((current) => ({ ...current, password: event.target.value }))} required placeholder="Password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} className="w-full rounded-lg border border-[#E5E4E0] px-3 py-2 pr-10 text-sm outline-none focus:border-[#9C6644]" />
                   <button type="button" onClick={() => setShowPassword((current) => !current)} className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-[#4A5568] hover:bg-[#F4F3EF] hover:text-[#111214]" aria-label={showPassword ? 'Hide password' : 'Show password'} title={showPassword ? 'Hide password' : 'Show password'}>
                     {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
                   </button>
                 </div>}
+                {mode === 'signup' && <p className="text-xs leading-5 text-[#4A5568]">Use 8+ characters with uppercase and lowercase letters, a number, and a special character.</p>}
                 <button type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#9C6644] px-3 py-2.5 text-sm font-bold text-white hover:bg-[#8A5A3C] disabled:opacity-60">
                   {loading ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : mode === 'reset' ? <KeyRound className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
                   {mode === 'signup' ? 'Create optional account' : mode === 'reset' ? 'Send reset email' : 'Sign in'}
