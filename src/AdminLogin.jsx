@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Eye, EyeOff, Fingerprint, Lock, Moon, Sun, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from './supabaseClient';
@@ -18,6 +18,7 @@ export default function AdminLogin({ onAuthenticated, onClose, theme = 'light', 
   const [passkeySupported, setPasskeySupported] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const passkeyAutoAttemptedRef = useRef(false);
 
   const isLockedOut = lockoutSeconds > 0;
 
@@ -100,11 +101,13 @@ export default function AdminLogin({ onAuthenticated, onClose, theme = 'light', 
     onAuthenticated?.(data.session);
   };
 
-  const handlePasskeySignIn = async () => {
+  const handlePasskeySignIn = async ({ automatic = false } = {}) => {
     if (isLockedOut || isSubmitting || isPasskeySubmitting) return;
 
     setIsPasskeySubmitting(true);
     setError('');
+
+    if (typeof window !== 'undefined') window.__wenAdminPasskeyCeremony = true;
 
     try {
       const { data, error: passkeyError } = await supabase.auth.signInWithPasskey();
@@ -121,6 +124,11 @@ export default function AdminLogin({ onAuthenticated, onClose, theme = 'light', 
       setLockoutSeconds(0);
       onAuthenticated?.(data?.session);
     } catch (passkeyError) {
+      // Browser/device cancellation or an unregistered device should leave
+      // the password form available, especially for the automatic attempt.
+      // Only an intentional retry counts toward the password-style lockout.
+      if (automatic) return;
+
       const nextFailedAttempts = failedAttempts + 1;
 
       if (nextFailedAttempts >= MAX_FAILED_ATTEMPTS) {
@@ -132,9 +140,21 @@ export default function AdminLogin({ onAuthenticated, onClose, theme = 'light', 
         setError(`${passkeyError.message || 'Passkey sign-in was not completed.'} ${MAX_FAILED_ATTEMPTS - nextFailedAttempts} attempt(s) remaining.`);
       }
     } finally {
+      if (typeof window !== 'undefined') window.__wenAdminPasskeyCeremony = false;
       setIsPasskeySubmitting(false);
     }
   };
+
+  useEffect(() => {
+    if (!passkeySupported || isLockedOut || passkeyAutoAttemptedRef.current) return undefined;
+
+    passkeyAutoAttemptedRef.current = true;
+    const timeoutId = window.setTimeout(() => {
+      void handlePasskeySignIn({ automatic: true });
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [passkeySupported, isLockedOut]);
 
   return (
     <main className="motion-fade-in relative flex min-h-screen min-h-[100dvh] w-full min-w-0 items-start justify-center overflow-x-hidden overflow-y-auto bg-[#F4F3EF] px-4 pb-6 pt-20 sm:items-center sm:py-10">

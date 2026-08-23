@@ -267,6 +267,38 @@ export default function App() {
     return () => window.removeEventListener('popstate', handleBrowserNavigation);
   }, []);
 
+  useEffect(() => {
+    if (!isAdminApp || user?.role !== 'SUPER_ADMIN') return undefined;
+
+    let terminationStarted = false;
+    const terminateHiddenAdminSession = () => {
+      // WebAuthn temporarily hides the page while the device prompt is open.
+      // Do not sign out in the middle of that security ceremony.
+      if (typeof window !== 'undefined' && window.__wenAdminPasskeyCeremony) return;
+      if (terminationStarted) return;
+
+      terminationStarted = true;
+      setUser(null);
+      setProducts([]);
+      setOrders([]);
+      setCart([]);
+      setTrackingPrefill(null);
+      void supabase.auth.signOut({ scope: 'local' });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') terminateHiddenAdminSession();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', terminateHiddenAdminSession);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', terminateHiddenAdminSession);
+    };
+  }, [user?.role]);
+
   const loadProducts = async () => {
     setProductsLoading(true);
     setProductsError('');
