@@ -52,7 +52,7 @@ export default function AdminTools() {
 
     const [productsResult, ordersResult, membersResult] = await Promise.all([
       // The production products table does not include a SKU column. Keep
-      // this query aligned with the live schema; SKU remains optional in CSV
+      // this query aligned with the live schema; SKU remains optional in XLSX
       // output and other admin views can still display a fallback value.
       supabase.from('products').select('id, name, category, price, stock, created_at').order('name'),
       supabase.from('orders').select('id, customer_name, customer_email, total_amount, status, fulfillment_method, created_at').order('created_at', { ascending: false }),

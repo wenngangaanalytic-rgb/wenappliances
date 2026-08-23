@@ -12,12 +12,6 @@ const safeJsonForScript = (value) => JSON.stringify(value)
   .replaceAll('>', '\\u003e')
   .replaceAll('&', '\\u0026');
 
-const csvCell = (value) => {
-  const text = String(value ?? '');
-  const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
-  return `"${safeText.replaceAll('"', '""')}"`;
-};
-
 const normalizeRows = (rows) => (Array.isArray(rows) ? rows : []).map((row) => ({ ...row }));
 
 const buildXlsxBlob = ({ title, columns, rows, generatedAt = new Date() }) => {
@@ -203,23 +197,6 @@ const buildXlsxBlob = ({ title, columns, rows, generatedAt = new Date() }) => {
 
 export { buildXlsxBlob };
 
-export const buildCsv = ({ title, columns, rows, generatedAt = new Date() }) => {
-  const metadata = [
-    ['WenAppliances'],
-    ['CONFIDENTIAL ADMINISTRATIVE EXPORT'],
-    ['Report', title],
-    ['Generated', generatedAt.toLocaleString()],
-    ['Watermark', 'WENAPPLIANCES'],
-    []
-  ];
-  const csvRows = [
-    ...metadata,
-    columns.map((column) => column.label),
-    ...normalizeRows(rows).map((row) => columns.map((column) => row[column.key]))
-  ];
-  return csvRows.map((row) => row.map(csvCell).join(',')).join('\n');
-};
-
 const downloadBlob = (filename, blob) => {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -229,11 +206,6 @@ const downloadBlob = (filename, blob) => {
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-};
-
-export const downloadCsvExport = ({ filename, title, columns, rows }) => {
-  const csv = buildCsv({ title, columns, rows });
-  downloadBlob(filename, new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }));
 };
 
 export const downloadXlsxExport = ({ filename, title, columns, rows }) => {
@@ -286,14 +258,13 @@ const logoMarkup = `
 `;
 
 export const buildProtectedReport = async ({ title, columns, rows, pin, generatedAt = new Date() }) => {
-  const csv = buildCsv({ title, columns, rows, generatedAt });
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await deriveKey(pin, salt, 'encrypt');
   const encrypted = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
     key,
-    new TextEncoder().encode(JSON.stringify({ title, generatedAt: generatedAt instanceof Date ? generatedAt.toLocaleString() : String(generatedAt || ''), columns, rows: normalizeRows(rows), csv }))
+    new TextEncoder().encode(JSON.stringify({ title, generatedAt: generatedAt instanceof Date ? generatedAt.toLocaleString() : String(generatedAt || ''), columns, rows: normalizeRows(rows) }))
   );
 
   const payload = {
