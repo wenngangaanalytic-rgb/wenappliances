@@ -82,16 +82,22 @@ const drawLogoImage = (doc, logoDataUrl, x, y, size) => {
   drawFallbackLogo(doc, x, y, size);
 };
 
-const drawWatermark = (doc) => {
+const drawWatermark = (doc, logoDataUrl) => {
+  if (!logoDataUrl || typeof doc.setGState !== 'function' || typeof doc.GState !== 'function') return;
+
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  setText(doc, [235, 224, 214]);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(48);
-  doc.text('WENAPPLIANCES', pageWidth / 2, pageHeight / 2 + 6, {
-    align: 'center',
-    angle: 28
-  });
+  const size = Math.min(pageWidth * 0.84, pageHeight * 0.62);
+  const x = (pageWidth - size) / 2;
+  const y = (pageHeight - size) / 2 - 2;
+
+  doc.saveGraphicsState?.();
+  doc.setGState(new doc.GState({ opacity: 0.1 }));
+  try {
+    doc.addImage(logoDataUrl, 'PNG', x, y, size, size, 'wen-watermark', 'FAST');
+  } finally {
+    doc.restoreGraphicsState?.();
+  }
 };
 
 const drawFooter = (doc, logoDataUrl) => {
@@ -108,7 +114,7 @@ const drawFooter = (doc, logoDataUrl) => {
     setText(doc, COLORS.muted);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
-    doc.text('WenAppliances  •  3-month warranty  •  Delivery offered  •  Old stock haul-away', 28, pageHeight - 12);
+    doc.text('WenAppliances - 3-month warranty - Delivery offered - Old stock haul-away', 28, pageHeight - 12);
     doc.text(`Page ${page} of ${pageCount}`, pageWidth - 16, pageHeight - 12, { align: 'right' });
   }
 };
@@ -138,7 +144,7 @@ const drawInfoCard = (doc, x, y, width, height, title, lines) => {
 const getCleanLogoDataUrl = async () => {
   if (typeof window === 'undefined' || typeof document === 'undefined') return null;
   if (!logoDataUrlPromise) {
-    logoDataUrlPromise = fetch('/wen-icon.jpg')
+    logoDataUrlPromise = fetch('/wen-icon.png')
       .then((response) => {
         if (!response.ok) throw new Error('WenAppliances logo could not be loaded');
         return response.blob();
@@ -218,7 +224,7 @@ export const createReceiptPdf = (order, logoDataUrl = null) => {
   const drawPageDecor = () => {
     setFill(doc, COLORS.cream);
     doc.rect(0, 0, pageWidth, pageHeight, 'F');
-    drawWatermark(doc);
+    drawWatermark(doc, logoDataUrl);
   };
 
   const ensureSpace = (height) => {
@@ -231,20 +237,22 @@ export const createReceiptPdf = (order, logoDataUrl = null) => {
   // Warm paper background and oversized branded watermark.
   drawPageDecor();
 
-  // Strong colored header inspired by the requested compact receipt layout.
-  setFill(doc, COLORS.navy);
-  doc.roundedRect(margin, 14, contentWidth, 43, 4, 4, 'F');
+  // A light, polished header keeps the receipt easy to read when printed.
+  setFill(doc, [255, 255, 255]);
+  setDraw(doc, COLORS.line);
+  doc.setLineWidth(0.4);
+  doc.roundedRect(margin, 14, contentWidth, 43, 4, 4, 'FD');
   setFill(doc, COLORS.brown);
   doc.roundedRect(margin, 14, 5, 43, 2, 2, 'F');
-  setFill(doc, [255, 255, 255]);
+  setFill(doc, COLORS.cream);
   doc.roundedRect(margin + 10, 21, 22, 22, 4, 4, 'F');
   drawLogoImage(doc, logoDataUrl, margin + 11, 22, 20);
 
-  setText(doc, [255, 255, 255]);
+  setText(doc, COLORS.ink);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(18);
   doc.text('WenAppliances', margin + 38, 27);
-  setText(doc, [211, 221, 230]);
+  setText(doc, COLORS.muted);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.text('OFFICIAL PURCHASE RECEIPT', margin + 38, 34);

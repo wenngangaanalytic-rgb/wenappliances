@@ -15,14 +15,14 @@ const setApplicationIdentity = () => {
 
   document.title = 'Admin Wen';
   document.querySelector('meta[name="description"]')?.setAttribute('content', 'Secure WenAppliances administration portal');
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#2563EB');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#9C6644');
   document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute('content', 'Admin Wen');
 
   const favicon = document.querySelector('link[rel="icon"]');
-  favicon?.setAttribute('href', '/admin-wen-logo.svg');
+  favicon?.setAttribute('href', '/wen-icon.png');
 
   const appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
-  appleIcon?.setAttribute('href', '/admin-wen-logo.svg');
+  appleIcon?.setAttribute('href', '/wen-icon.png');
 
 };
 

@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
-  <title>Admin Wen</title>
-  <rect width="64" height="64" rx="16" fill="#2563EB"/>
-  <path d="M15 19h7l5.5 19L33 24h6l5.5 14L50 19h7L48 47h-7l-5-13-5 13h-7L15 19Z" fill="#fff"/>
-  <path d="M46 9h9v9" fill="none" stroke="#BFDBFE" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

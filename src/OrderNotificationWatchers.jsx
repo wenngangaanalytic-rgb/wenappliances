@@ -30,7 +30,7 @@ export function AdminOrderNotificationWatcher({ user }) {
         body: `${order.customer_name || 'A customer'} placed an order for ${formatMoney(order.total_amount)}.`,
         tag: `admin-order-${order.id}`,
         url: '/orders',
-        icon: '/admin-wen-logo.svg'
+        icon: '/wen-icon.png'
       });
     };
 
@@ -42,7 +42,7 @@ export function AdminOrderNotificationWatcher({ user }) {
         body: `${order.customer_name || 'A customer'} cancelled order ${order.id}. Stock has been restored where applicable.`,
         tag: `admin-order-cancelled-${order.id}`,
         url: '/orders',
-        icon: '/admin-wen-logo.svg'
+        icon: '/wen-icon.png'
       });
     };
 
@@ -142,7 +142,7 @@ export function CustomerOrderNotificationWatcher({ user, refreshKey = '' }) {
                 body: `Order ${orderId} is confirmed and awaiting ${fulfillment}.`,
                 tag: `customer-order-${orderId}`,
                 url: '/track-order',
-                icon: '/wenappliances-logo.svg'
+                icon: '/wen-icon.png'
               });
             }
 
@@ -152,7 +152,7 @@ export function CustomerOrderNotificationWatcher({ user, refreshKey = '' }) {
                 body: `Order ${orderId} has been cancelled. Open Track Order for the details.`,
                 tag: `customer-order-${orderId}`,
                 url: '/track-order',
-                icon: '/wenappliances-logo.svg'
+                icon: '/wen-icon.png'
               });
             }
 

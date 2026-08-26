@@ -46,7 +46,7 @@ export default function OrderNotificationPrompt({ isAdmin = false, active = true
         body: isAdmin ? 'You will be alerted when a new order awaits confirmation or a customer cancels.' : 'You will be alerted when your order is confirmed or cancelled.',
         tag: `notifications-enabled-${isAdmin ? 'admin' : 'customer'}`,
         url: isAdmin ? '/orders' : '/track-order',
-        icon: isAdmin ? '/admin-wen-logo.svg' : '/wenappliances-logo.svg'
+        icon: '/wen-icon.png'
       });
       dismiss();
       return;

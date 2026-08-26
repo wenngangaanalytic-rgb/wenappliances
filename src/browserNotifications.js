@@ -24,7 +24,7 @@ export const showOrderNotification = async ({
   body,
   tag,
   url = '/',
-  icon = '/wenappliances-logo.svg'
+  icon = '/wen-icon.png'
 }) => {
   if (!canUseBrowserNotifications() || Notification.permission !== 'granted') return false;
 
