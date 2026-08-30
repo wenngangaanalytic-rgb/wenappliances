@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { LoaderCircle, MessageCircle, Send, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { chatSupabase } from './supabaseClient';
 import { ensureChatIdentity, getChatSessionId } from './chatSession';
+import { emitChatActivity } from './chatActivity';
 
 const MAX_MESSAGE_LENGTH = 2000;
 
@@ -43,13 +45,31 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
   }, [isOpen]);
 
   useEffect(() => {
+    if (!sessionId || !productId) return undefined;
+
+    emitChatActivity({
+      isOpen,
+      isAdmin: false,
+      sessionId,
+      productId
+    });
+
+    return () => emitChatActivity({
+      isOpen: false,
+      isAdmin: false,
+      sessionId,
+      productId
+    });
+  }, [isOpen, productId, sessionId]);
+
+  useEffect(() => {
     const query = new URLSearchParams(window.location.search);
     if (query.get('chat') === '1') setIsOpen(true);
   }, [productId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isOpen]);
+  }, [messages, isOpen, isOtherPartyTyping]);
 
   useEffect(() => {
     const input = messageInputRef.current;
@@ -252,13 +272,29 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
     }
   };
 
-  return (
-    <div className={inlineTrigger ? 'relative inline-flex shrink-0 flex-col items-end' : 'fixed bottom-4 right-4 z-40 flex flex-col items-end'}>
-      {isOpen && (
-        <section id="product-chat-window" className={`mb-3 flex h-auto min-h-[320px] max-h-[min(78vh,680px)] w-[min(calc(100vw-2rem),380px)] shrink-0 flex-col overflow-hidden rounded-2xl border border-[#E5E4E0] bg-white text-[#111214] shadow-2xl ${inlineTrigger ? 'fixed bottom-4 right-4 z-[70]' : ''}`} aria-label={`Chat about ${productName}`}>
+  const chatOverlay = isOpen && typeof document !== 'undefined' && createPortal(
+    <>
+          {inlineTrigger && (
+            <button
+              type="button"
+              onClick={toggleChat}
+              className="fixed inset-0 z-[68] bg-black/35 backdrop-blur-[1px]"
+              aria-label="Close product chat"
+            />
+          )}
+          <section id="product-chat-window" className={`flex h-auto min-h-[320px] max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] shrink-0 flex-col overflow-hidden rounded-2xl border border-[#E5E4E0] bg-white text-[#111214] shadow-2xl sm:w-[min(calc(100vw-2rem),500px)] ${inlineTrigger ? 'fixed left-1/2 top-1/2 z-[70] -translate-x-1/2 -translate-y-1/2' : 'fixed bottom-4 right-4 z-[70] sm:w-[min(calc(100vw-2rem),380px)]'}`} role="dialog" aria-modal="true" aria-label={`Chat about ${productName}`}>
           <header className="flex items-start justify-between gap-3 bg-[#111214] px-4 py-4 text-white">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wider text-[#D8B49A]">WenAppliances support</p>
+              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#D8B49A]" aria-live="polite">
+                <span>{isOtherPartyTyping ? 'Admin is typing' : 'WenAppliances support'}</span>
+                {isOtherPartyTyping && (
+                  <span className="inline-flex items-center gap-1" aria-hidden="true">
+                    <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
+                    <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
+                    <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
+                  </span>
+                )}
+              </p>
               <h2 className="mt-1 truncate text-base font-bold">Questions about {productName}?</h2>
             </div>
             <button type="button" onClick={toggleChat} className="rounded-lg p-1.5 text-white/70 transition hover:bg-white/10 hover:text-white" aria-label="Close product chat">
@@ -266,7 +302,7 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
             </button>
           </header>
 
-          <div className="min-h-[180px] max-h-[min(58vh,520px)] grow space-y-3 overflow-y-auto bg-[#F8F7F4] p-4" aria-live="polite">
+          <div className="min-h-0 max-h-[min(58dvh,520px)] grow space-y-3 overflow-y-auto overscroll-contain bg-[#F8F7F4] p-4" aria-live="polite">
             {isLoading && (
               <div className="flex items-center justify-center gap-2 py-10 text-sm text-[#667085]"><LoaderCircle className="h-4 w-4 animate-spin" /> Loading chat...</div>
             )}
@@ -332,10 +368,15 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
               {isSending ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
             </button>
           </form>
-        </section>
-      )}
+          </section>
+    </>,
+    document.body
+  );
 
-      <button type="button" onClick={toggleChat} className={inlineTrigger ? 'inline-flex items-center gap-2 rounded-xl border border-[#9C6644] bg-[#9C6644] px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#8A5A3C] hover:shadow-lg' : 'relative grid h-14 w-14 place-items-center rounded-full bg-[#9C6644] text-white shadow-xl transition hover:bg-[#8A5A3C]'} aria-label={isOpen ? 'Close product chat' : 'Ask about product'} aria-expanded={isOpen} aria-controls="product-chat-window">
+  return (
+    <>
+      <div className={inlineTrigger ? 'relative inline-flex shrink-0 flex-col items-end' : 'fixed bottom-4 right-4 z-40 flex flex-col items-end'}>
+      <button type="button" onClick={toggleChat} className={inlineTrigger ? 'inline-flex shrink-0 items-center gap-2 rounded-xl border border-[#9C6644] bg-[#9C6644] px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#8A5A3C] hover:shadow-lg sm:px-4 sm:py-2.5 sm:text-sm' : 'relative grid h-14 w-14 place-items-center rounded-full bg-[#9C6644] text-white shadow-xl transition hover:bg-[#8A5A3C]'} aria-label={isOpen ? 'Close product chat' : 'Ask about product'} aria-expanded={isOpen} aria-controls="product-chat-window">
         {isOpen ? <X className="h-5 w-5" aria-hidden="true" /> : <MessageCircle className="h-5 w-5" aria-hidden="true" />}
         {inlineTrigger && <span>{isOpen ? 'Close chat' : 'Ask about product'}</span>}
         {!inlineTrigger && !isOpen && unreadCount > 0 && (
@@ -344,6 +385,8 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
           </span>
         )}
       </button>
-    </div>
+      </div>
+      {chatOverlay}
+    </>
   );
 }

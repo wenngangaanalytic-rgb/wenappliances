@@ -93,9 +93,9 @@ export default function AdminLogin({ onAuthenticated, onClose, theme = 'light', 
   return (
     <main className="motion-fade-in relative flex min-h-screen min-h-[100dvh] w-full min-w-0 items-start justify-center overflow-x-hidden overflow-y-auto bg-[#F4F3EF] px-4 pb-6 pt-20 sm:items-center sm:py-10">
       {toggleTheme && (
-        <button type="button" onClick={toggleTheme} aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} className="absolute right-4 top-4 inline-flex items-center gap-2 rounded-full border border-[#E5E4E0] bg-white px-3 py-2 text-xs font-semibold text-[#4A5568] transition hover:border-[#9C6644] hover:text-[#9C6644]">
+        <button type="button" onClick={toggleTheme} aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} className="absolute right-4 top-4 inline-flex items-center gap-2 rounded-full border border-[#E5E4E0] bg-white p-2 text-xs font-semibold text-[#4A5568] transition hover:border-[#9C6644] hover:text-[#9C6644] lg:px-3 lg:py-2">
           {theme === 'dark' ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}
-          <span className="hidden sm:inline">{theme === 'dark' ? 'Light' : 'Dark'} theme</span>
+          <span className="hidden lg:inline">{theme === 'dark' ? 'Light' : 'Dark'} theme</span>
         </button>
       )}
       <section className="motion-fade-up relative box-border w-full min-w-0 max-w-md rounded-2xl border border-[#E5E4E0] bg-white p-6 shadow-xl sm:p-8">

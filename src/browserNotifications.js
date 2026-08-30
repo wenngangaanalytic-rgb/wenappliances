@@ -34,6 +34,7 @@ export const showOrderNotification = async ({
     badge: icon,
     tag,
     renotify: true,
+    silent: false,
     data: { url }
   };
 

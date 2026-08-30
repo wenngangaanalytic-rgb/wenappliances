@@ -1,8 +1,10 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Bell, BellRing, MessageCircle, Settings2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { chatSupabase, supabase } from './supabaseClient';
 import { ensureChatIdentity, getChatSessionId } from './chatSession';
+import { CHAT_ACTIVITY_EVENT, isActiveChat } from './chatActivity';
 import {
   getNotificationPermission,
   requestBrowserNotificationPermission,
@@ -61,10 +63,38 @@ export function ChatNotificationProvider({ isAdmin = false, active = true, child
   const [notifications, setNotifications] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const [permission, setPermission] = useState(getNotificationPermission);
+  const activeChatRef = useRef({ isOpen: false, isAdmin, sessionId: '', productId: '' });
+
+  useEffect(() => {
+    if (!active) return undefined;
+
+    const handleChatActivity = (event) => {
+      const activity = event.detail || {};
+      if (Boolean(activity.isAdmin) !== Boolean(isAdmin)) return;
+
+      activeChatRef.current = {
+        isOpen: Boolean(activity.isOpen),
+        isAdmin: Boolean(activity.isAdmin),
+        sessionId: String(activity.sessionId || ''),
+        productId: String(activity.productId || '')
+      };
+
+      if (activeChatRef.current.isOpen) {
+        const activeKey = isAdmin
+          ? `${activeChatRef.current.sessionId}::${activeChatRef.current.productId}`
+          : activeChatRef.current.productId;
+        setNotifications((current) => current.filter((notification) => notification.key !== activeKey));
+      }
+    };
+
+    window.addEventListener(CHAT_ACTIVITY_EVENT, handleChatActivity);
+    return () => window.removeEventListener(CHAT_ACTIVITY_EVENT, handleChatActivity);
+  }, [active, isAdmin]);
 
   useEffect(() => {
     if (!active) {
       setNotifications([]);
+      activeChatRef.current = { isOpen: false, isAdmin, sessionId: '', productId: '' };
       return undefined;
     }
 
@@ -91,7 +121,10 @@ export function ChatNotificationProvider({ isAdmin = false, active = true, child
         return;
       }
 
-      setNotifications(buildNotifications(data ?? [], isAdmin));
+      setNotifications(buildNotifications(
+        (data ?? []).filter((message) => !isActiveChat(activeChatRef.current, message, isAdmin)),
+        isAdmin
+      ));
     };
 
     const start = async () => {
@@ -117,6 +150,22 @@ export function ChatNotificationProvider({ isAdmin = false, active = true, child
               incomingMessage.sender_role !== inboundRole
               || (!isAdmin && String(incomingMessage.owner_id) !== String(ownerId))
             ) return;
+
+            if (isActiveChat(activeChatRef.current, incomingMessage, isAdmin)) {
+              let readQuery = client
+                .from('messages')
+                .update({ is_read: true })
+                .eq('session_id', incomingMessage.session_id)
+                .eq('product_id', incomingMessage.product_id)
+                .eq('sender_role', inboundRole)
+                .eq('is_read', false);
+
+              if (!isAdmin) readQuery = readQuery.eq('owner_id', ownerId);
+              void readQuery.then(({ error: markReadError }) => {
+                if (markReadError) console.warn('Could not mark the open chat message as read.', markReadError);
+              });
+              return;
+            }
 
             setNotifications((current) => {
               const key = getNotificationKey(incomingMessage, isAdmin);
@@ -218,6 +267,17 @@ export function ChatNotificationBell() {
     window.location.assign(notification.url);
   };
 
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen, setIsOpen]);
+
   return (
     <div className="relative z-[120]">
       <button
@@ -236,9 +296,17 @@ export function ChatNotificationBell() {
         )}
       </button>
 
-      {isOpen && (
-        <section className={`absolute right-0 top-12 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border p-3 text-left shadow-2xl ${isAdmin ? 'border-[#34383D] bg-[#17191C] text-[#F1F3EF]' : 'border-[#E5E4E0] bg-white text-[#111214]'}`} role="dialog" aria-label="Notifications">
-          <div className="flex items-center justify-between gap-3 border-b border-[#E5E4E0] pb-3 dark:border-[#34383D]">
+      {isOpen && typeof document !== 'undefined' && createPortal(
+        <>
+          <button
+            type="button"
+            onClick={() => setIsOpen(false)}
+            className="fixed inset-0 z-[125] bg-black/20 backdrop-blur-[1px] lg:hidden"
+            aria-label="Close notifications"
+          />
+          <section className={`fixed bottom-3 left-1/2 z-[130] flex max-h-[min(78dvh,620px)] w-[calc(100vw-1.5rem)] -translate-x-1/2 flex-col overflow-hidden rounded-3xl border p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-left shadow-2xl lg:bottom-auto lg:left-auto lg:right-8 lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:w-[min(24rem,calc(100vw-2rem))] lg:translate-x-0 ${isAdmin ? 'border-[#34383D] bg-[#17191C] text-[#F1F3EF]' : 'border-[#E5E4E0] bg-white text-[#111214]'}`} role="dialog" aria-modal="true" aria-label="Notifications">
+          <div className="mx-auto mb-2 h-1 w-10 shrink-0 rounded-full bg-[#D8D6CF] lg:hidden" aria-hidden="true" />
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#E5E4E0] pb-3 dark:border-[#34383D]">
             <div>
               <h2 className="font-bold">Notifications</h2>
               <p className="mt-0.5 text-xs text-[#858884]">{isAdmin ? 'Customer product chat updates' : 'Replies about products you asked about'}</p>
@@ -248,14 +316,14 @@ export function ChatNotificationBell() {
             </button>
           </div>
 
-          <div className="max-h-80 overflow-y-auto py-2">
+          <div className="min-h-0 grow overflow-y-auto overscroll-contain py-2">
             {notifications.length === 0 && <p className="px-2 py-8 text-center text-sm text-[#858884]">No new chat notifications.</p>}
             {notifications.map((notification) => (
               <button
                 type="button"
                 key={notification.key}
                 onClick={() => openNotification(notification)}
-                className="flex w-full items-start gap-3 rounded-xl px-2 py-3 text-left transition hover:bg-[#F4F3EF] dark:hover:bg-[#24272A]"
+                className="flex w-full items-start gap-3 rounded-2xl px-2 py-3 text-left transition hover:bg-[#F4F3EF] active:bg-[#F4F3EF] dark:hover:bg-[#24272A] dark:active:bg-[#24272A]"
               >
                 <span className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl ${isAdmin ? 'bg-blue-500/15 text-blue-400' : 'bg-[#9C6644]/10 text-[#9C6644]'}`}>
                   <MessageCircle className="h-4 w-4" aria-hidden="true" />
@@ -277,7 +345,9 @@ export function ChatNotificationBell() {
               <Settings2 className="h-3.5 w-3.5" aria-hidden="true" /> Enable chat pop-ups
             </button>
           )}
-        </section>
+          </section>
+        </>,
+        document.body
       )}
     </div>
   );

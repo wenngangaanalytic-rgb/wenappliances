@@ -73,10 +73,10 @@ const ThemeToggle = ({ theme, toggleTheme }) => (
     onClick={toggleTheme}
     aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
     title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-    className="inline-flex items-center gap-2 rounded-full border border-[#E5E4E0] bg-white px-3 py-2 text-xs font-semibold text-[#4A5568] transition hover:border-[#9C6644] hover:text-[#9C6644]"
+    className="inline-flex items-center gap-2 rounded-full border border-[#E5E4E0] bg-white p-2 text-xs font-semibold text-[#4A5568] transition hover:border-[#9C6644] hover:text-[#9C6644] lg:px-3 lg:py-2"
   >
     {theme === 'dark' ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}
-    <span className="hidden sm:inline">{theme === 'dark' ? 'Light' : 'Dark'} theme</span>
+    <span className="hidden lg:inline">{theme === 'dark' ? 'Light' : 'Dark'} theme</span>
   </button>
 );
 
@@ -582,6 +582,7 @@ const StoreLayout = ({ children }) => {
   const [newsletterEmail, setNewsletterEmail] = useState('');
   const [newsletterMessage, setNewsletterMessage] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const searchSuggestions = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -615,6 +616,7 @@ const StoreLayout = ({ children }) => {
     setSearchQuery(value);
     setActiveCategory('');
     setIsSearchOpen(false);
+    setIsMobileMenuOpen(false);
     navigate('/products');
   };
 
@@ -630,6 +632,7 @@ const StoreLayout = ({ children }) => {
       setSearchQuery('');
       setActiveCategory('');
     }
+    setIsMobileMenuOpen(false);
     navigate(path);
   };
 
@@ -686,14 +689,15 @@ const StoreLayout = ({ children }) => {
               )}
             </div>
             
-            <ChatNotificationBell />
-            <AccountMenu user={user} onTrackOrder={() => navigate('/track-order')} onMyOrders={() => navigate('/my-orders')} />
+            <div className="hidden md:block"><ChatNotificationBell /></div>
+            <div className="hidden md:block"><AccountMenu user={user} onTrackOrder={() => navigate('/track-order')} onMyOrders={() => navigate('/my-orders')} /></div>
 
-            <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
+            <div className="hidden md:block"><ThemeToggle theme={theme} toggleTheme={toggleTheme} /></div>
             
             <button 
               onClick={() => setIsCartOpen(true)}
-              className="p-2 hover:bg-[#E5E4E0] rounded-full transition-colors relative"
+              className="relative rounded-full p-2 transition-colors hover:bg-[#E5E4E0]"
+              aria-label="Open shopping cart"
             >
               <ShoppingCart className="h-5 w-5 text-[#4A5568]" />
               {cartItemCount > 0 && (
@@ -702,8 +706,84 @@ const StoreLayout = ({ children }) => {
                 </span>
               )}
             </button>
+
+            <div className="md:hidden"><ChatNotificationBell /></div>
+            <button
+              type="button"
+              onClick={() => setIsMobileMenuOpen((open) => !open)}
+              className="inline-flex items-center justify-center rounded-full border border-[#E5E4E0] bg-white p-2 text-[#4A5568] transition hover:border-[#9C6644] hover:text-[#9C6644] md:hidden"
+              aria-label={isMobileMenuOpen ? 'Close storefront menu' : 'Open storefront menu'}
+              aria-expanded={isMobileMenuOpen}
+              aria-controls="storefront-mobile-menu"
+            >
+              {isMobileMenuOpen ? <X className="h-5 w-5" aria-hidden="true" /> : <Menu className="h-5 w-5" aria-hidden="true" />}
+            </button>
           </div>
         </div>
+
+        {isMobileMenuOpen && (
+          <>
+            <button
+              type="button"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="fixed inset-x-0 bottom-0 top-16 z-[45] bg-black/25 backdrop-blur-[1px] md:hidden"
+              aria-label="Close storefront menu"
+            />
+            <div id="storefront-mobile-menu" className="fixed inset-x-3 top-[4.5rem] z-[50] max-h-[calc(100dvh-5.5rem)] overflow-y-auto rounded-2xl border border-[#E5E4E0] bg-[#F4F3EF] p-3 text-left shadow-2xl md:hidden">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#858884]" aria-hidden="true" />
+                <input
+                  type="text"
+                  placeholder="Search products..."
+                  value={searchQuery}
+                  onFocus={() => setIsSearchOpen(true)}
+                  onChange={(event) => { setSearchQuery(event.target.value); setIsSearchOpen(true); }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      setIsSearchOpen(false);
+                      setIsMobileMenuOpen(false);
+                      navigate('/products');
+                    }
+                    if (event.key === 'Escape') setIsSearchOpen(false);
+                  }}
+                  className="w-full rounded-xl border border-[#E5E4E0] bg-white py-3 pl-10 pr-3 text-sm outline-none transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20"
+                />
+                {isSearchOpen && searchSuggestions.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full z-10 mt-2 overflow-hidden rounded-xl border border-[#E5E4E0] bg-white py-1 shadow-xl" role="listbox" aria-label="Search suggestions">
+                    {searchSuggestions.map((suggestion) => (
+                      <button
+                        key={`mobile-${suggestion.type}-${suggestion.value}`}
+                        type="button"
+                        role="option"
+                        aria-selected="false"
+                        onClick={() => chooseSearchSuggestion(suggestion.value)}
+                        className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm text-[#111214] transition-colors hover:bg-[#F4F3EF]"
+                      >
+                        <span className="truncate">{suggestion.value}</span>
+                        <span className="shrink-0 text-xs text-[#858884]">{suggestion.type}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <nav className="mt-3 grid gap-1 border-t border-[#E5E4E0] pt-3" aria-label="Storefront navigation">
+                <button type="button" onClick={() => handleNav('/', true)} className="rounded-xl px-3 py-3 text-left text-sm font-semibold text-[#4A5568] transition hover:bg-white hover:text-[#111214]">Home</button>
+                <button type="button" onClick={() => handleNav('/products', true)} className="rounded-xl px-3 py-3 text-left text-sm font-semibold text-[#4A5568] transition hover:bg-white hover:text-[#111214]">All Products</button>
+                <button type="button" onClick={() => { setIsMobileMenuOpen(false); navigate('/track-order'); }} className="rounded-xl px-3 py-3 text-left text-sm font-semibold text-[#4A5568] transition hover:bg-white hover:text-[#111214]">Track Order</button>
+                <button type="button" onClick={() => { setIsMobileMenuOpen(false); setIsContactOpen(true); }} className="rounded-xl px-3 py-3 text-left text-sm font-semibold text-[#4A5568] transition hover:bg-white hover:text-[#111214]">Support</button>
+              </nav>
+
+              <div className="mt-3 flex items-center justify-between gap-3 border-t border-[#E5E4E0] px-3 pt-3">
+                <span className="text-xs font-semibold uppercase tracking-wider text-[#858884]">Account & display</span>
+                <div className="flex items-center gap-2">
+                  <AccountMenu user={user} onTrackOrder={() => { setIsMobileMenuOpen(false); navigate('/track-order'); }} onMyOrders={() => { setIsMobileMenuOpen(false); navigate('/my-orders'); }} />
+                  <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
+                </div>
+              </div>
+            </div>
+          </>
+        )}
       </header>
       
       <main className="grow">
@@ -1107,6 +1187,72 @@ const StoreProductDetail = ({ id }) => {
   const [qty, setQty] = useState(1);
   const [imgIndex, setImgIndex] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [lightboxScale, setLightboxScale] = useState(1);
+  const [lightboxPosition, setLightboxPosition] = useState({ x: 0, y: 0 });
+  const lightboxDragRef = useRef(null);
+
+  useEffect(() => {
+    if (!isFullscreen) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setIsFullscreen(false);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen]);
+
+  const resetLightboxViewport = () => {
+    setLightboxScale(1);
+    setLightboxPosition({ x: 0, y: 0 });
+    lightboxDragRef.current = null;
+  };
+
+  const openFullscreen = () => {
+    resetLightboxViewport();
+    setIsFullscreen(true);
+  };
+
+  const closeFullscreen = () => {
+    setIsFullscreen(false);
+    resetLightboxViewport();
+  };
+
+  const changeLightboxZoom = (amount) => {
+    setLightboxScale((currentScale) => {
+      const nextScale = Math.min(3, Math.max(1, currentScale + amount));
+      if (nextScale === 1) setLightboxPosition({ x: 0, y: 0 });
+      return nextScale;
+    });
+  };
+
+  const handleLightboxPointerDown = (event) => {
+    if (lightboxScale <= 1) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    lightboxDragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      origin: lightboxPosition
+    };
+  };
+
+  const handleLightboxPointerMove = (event) => {
+    const drag = lightboxDragRef.current;
+    if (!drag) return;
+    setLightboxPosition({
+      x: drag.origin.x + event.clientX - drag.startX,
+      y: drag.origin.y + event.clientY - drag.startY
+    });
+  };
+
+  const handleLightboxPointerUp = () => {
+    lightboxDragRef.current = null;
+  };
+
+  const handleLightboxWheel = (event) => {
+    event.preventDefault();
+    changeLightboxZoom(event.deltaY < 0 ? 0.25 : -0.25);
+  };
 
   if (!product) return <div className="p-20 text-center">Product not found.</div>;
   const isOutOfStock = product.stock <= 0;
@@ -1124,35 +1270,50 @@ const StoreProductDetail = ({ id }) => {
   };
 
   return (
-    <div className="motion-fade-up max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <div className="motion-fade-in max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       
       {/* FULLSCREEN MODAL */}
       {isFullscreen && images.length > 0 && (
-        <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4">
-          <button 
-            onClick={() => setIsFullscreen(false)} 
-            className="absolute top-6 right-6 text-white hover:text-gray-300 transition-colors z-50"
-          >
-            <X className="h-8 w-8" />
-          </button>
+        <div className="product-lightbox fixed inset-0 z-[150] flex items-center justify-center bg-black/95" role="dialog" aria-modal="true" aria-label={`View ${product.name}`}>
+          <div className="absolute inset-x-3 top-3 z-10 flex items-center justify-between gap-2 sm:inset-x-6 sm:top-6">
+            <div className="flex items-center gap-1 rounded-xl border border-white/15 bg-black/45 p-1 text-white backdrop-blur-sm">
+              <button type="button" onClick={(event) => { event.stopPropagation(); changeLightboxZoom(-0.25); }} disabled={lightboxScale <= 1} className="grid h-9 w-9 place-items-center rounded-lg text-lg transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40" aria-label="Zoom out">−</button>
+              <span className="min-w-12 text-center text-xs font-semibold">{Math.round(lightboxScale * 100)}%</span>
+              <button type="button" onClick={(event) => { event.stopPropagation(); changeLightboxZoom(0.25); }} disabled={lightboxScale >= 3} className="grid h-9 w-9 place-items-center rounded-lg text-lg transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40" aria-label="Zoom in">+</button>
+              <button type="button" onClick={(event) => { event.stopPropagation(); resetLightboxViewport(); }} className="rounded-lg px-2.5 py-2 text-xs font-semibold transition hover:bg-white/10">Reset</button>
+            </div>
+            <button type="button" onClick={(event) => { event.stopPropagation(); closeFullscreen(); }} className="grid h-11 w-11 place-items-center rounded-full border border-white/15 bg-black/45 text-white backdrop-blur-sm transition hover:bg-white/15" aria-label="Close image viewer">
+              <X className="h-6 w-6" aria-hidden="true" />
+            </button>
+          </div>
           
           {images.length > 1 && (
-            <button onClick={prevImg} className="absolute left-6 text-white p-3 hover:bg-white/10 rounded-full transition-colors z-50">
+            <button onClick={(event) => { event.stopPropagation(); prevImg(event); }} className="absolute left-3 z-10 rounded-full p-3 text-white transition-colors hover:bg-white/10 sm:left-6">
               <ChevronRight className="h-10 w-10 rotate-180" />
             </button>
           )}
           
-          <div className="relative w-full h-full flex items-center justify-center" onClick={() => setIsFullscreen(false)}>
+          <div className="product-lightbox-stage relative z-[1] flex h-full w-full items-center justify-center overflow-hidden px-14 py-20 sm:px-20" onClick={(event) => { if (event.target === event.currentTarget) closeFullscreen(); }} onWheel={handleLightboxWheel}>
+            <div
+              className={`product-lightbox-image ${lightboxScale > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in'}`}
+              style={{ transform: `translate(${lightboxPosition.x}px, ${lightboxPosition.y}px) scale(${lightboxScale})` }}
+              onDoubleClick={(event) => { event.stopPropagation(); lightboxScale > 1 ? resetLightboxViewport() : changeLightboxZoom(1); }}
+              onPointerDown={handleLightboxPointerDown}
+              onPointerMove={handleLightboxPointerMove}
+              onPointerUp={handleLightboxPointerUp}
+              onPointerCancel={handleLightboxPointerUp}
+            >
             <img
               src={images[imgIndex]}
               alt={product.name}
-              className="product-photo max-w-full max-h-full object-contain cursor-zoom-out animate-in zoom-in-95 duration-300"
-              onClick={(e) => e.stopPropagation()}
+              draggable="false"
+              className="product-photo max-h-[calc(100dvh-8rem)] max-w-[calc(100vw-7rem)] select-none object-contain animate-in zoom-in-95 duration-300"
             />
+            </div>
           </div>
           
           {images.length > 1 && (
-            <button onClick={nextImg} className="absolute right-6 text-white p-3 hover:bg-white/10 rounded-full transition-colors z-50">
+            <button onClick={(event) => { event.stopPropagation(); nextImg(event); }} className="absolute right-3 z-10 rounded-full p-3 text-white transition-colors hover:bg-white/10 sm:right-6">
               <ChevronRight className="h-10 w-10" />
             </button>
           )}
@@ -1166,7 +1327,7 @@ const StoreProductDetail = ({ id }) => {
           {/* Main Image */}
           <div 
             className="relative w-full aspect-square flex items-center justify-center cursor-zoom-in group"
-            onClick={() => images.length > 0 && setIsFullscreen(true)}
+            onClick={() => images.length > 0 && openFullscreen()}
           >
             {images.length > 0 ? (
               <img
@@ -1230,9 +1391,13 @@ const StoreProductDetail = ({ id }) => {
           </p>
           
           <div className="mt-auto space-y-6">
-            <div className="flex items-center gap-4">
-              <span className="text-sm font-medium text-[#4A5568]">Quantity</span>
-              <div className="flex items-center border border-[#E5E4E0] rounded-lg overflow-hidden bg-white">
+            <div className="flex flex-wrap items-center gap-3 sm:flex-nowrap">
+              <div className="flex min-w-0 flex-1 items-center gap-3 sm:flex-initial">
+                <div className="min-w-[4.75rem] shrink-0">
+                  <span className="block text-sm font-semibold text-[#4A5568]">Quantity</span>
+                  <span className="mt-1 block text-xs text-[#858884]">{product.stock} available</span>
+                </div>
+                <div className="flex shrink-0 items-center overflow-hidden rounded-lg border border-[#E5E4E0] bg-white">
                 <button onClick={() => setQty(Math.max(1, qty - 1))} className="px-4 py-2 text-[#4A5568] hover:bg-[#F4F3EF] transition-colors">-</button>
                 <span className="px-4 py-2 font-medium w-12 text-center border-x border-[#E5E4E0]">{qty}</span>
                 <button 
@@ -1242,8 +1407,8 @@ const StoreProductDetail = ({ id }) => {
                 >
                   +
                 </button>
+                </div>
               </div>
-              <span className="text-sm text-[#858884]">{product.stock} available</span>
               <ProductChatWidget productId={product.id} productName={product.name} inlineTrigger />
             </div>
             

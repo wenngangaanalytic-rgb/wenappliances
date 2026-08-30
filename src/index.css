@@ -133,6 +133,8 @@ html[data-theme='dark'] [class*="text-[#111214]"],
 html[data-theme='dark'] [class*="text-[#111214]/"] { color: #f1f3ef !important; }
 html[data-theme='dark'] [class*="text-[#4A5568]"] { color: #b8bab7 !important; }
 html[data-theme='dark'] [class*="text-[#858884]"] { color: #a4a7a4 !important; }
+html[data-theme='dark'] [class*="text-[#667085]"] { color: #b8bab7 !important; }
+html[data-theme='dark'] [class*="text-[#98A2B3]"] { color: #a4a7a4 !important; }
 html[data-theme='dark'] [class*="border-[#E5E4E0]"],
 html[data-theme='dark'] [class*="border-[#C9C7C0]"] { border-color: #34383d !important; }
 
@@ -230,6 +232,26 @@ html[data-theme='dark'] .place-order-button:not(:disabled):hover {
   filter: none !important;
   mix-blend-mode: normal !important;
   opacity: 1 !important;
+}
+
+.product-lightbox {
+  padding: max(0.75rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right)) max(0.75rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left));
+}
+
+.product-lightbox-stage {
+  touch-action: none;
+}
+
+.product-lightbox-image {
+  transform-origin: center;
+  transition: transform 180ms ease;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .product-lightbox-image {
+    transition: none;
+  }
 }
 
 html[data-theme='dark'] .product-photo-surface,
