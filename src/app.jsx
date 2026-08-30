@@ -5,7 +5,7 @@ import {
   Package, LayoutDashboard, Settings, LogOut, 
   TrendingUp, Users, DollarSign, Edit, Trash2, Plus,
   ShieldCheck, AlertTriangle, CheckCircle2, Lock,
-  Printer, Download, ImagePlus, Moon, Sun, GripVertical, Star
+  Printer, Download, ImagePlus, Moon, Sun, GripVertical, Star, MessagesSquare
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import SecureAdminLogin from './AdminLogin';
@@ -16,8 +16,10 @@ import OrderTracking from './OrderTracking';
 import SupabaseAdminOrders from './AdminOrders';
 import SupabaseAdminMembers from './AdminMembers';
 import AdminTools from './AdminTools';
+import AdminProductChat from './AdminProductChat';
 import AccountMenu from './AccountMenu';
 import ResetPassword from './ResetPassword';
+import ProductChatWidget from './ProductChatWidget';
 import PresenceTracker from './PresenceTracker';
 import OrderNotificationPrompt from './OrderNotificationPrompt';
 import { AdminOrderNotificationWatcher, CustomerOrderNotificationWatcher } from './OrderNotificationWatchers';
@@ -1260,6 +1262,7 @@ const StoreProductDetail = ({ id }) => {
           </div>
         </div>
       </div>
+      <ProductChatWidget productId={product.id} productName={product.name} />
     </div>
   );
 };
@@ -1472,6 +1475,7 @@ const AdminLayout = ({ children }) => {
     { id: 'products', label: 'Inventory & Products', icon: Package },
     { id: 'orders', label: 'Order Management', icon: ShoppingCart },
     { id: 'members', label: 'Members', icon: Users },
+    { id: 'chats', label: 'Product Chats', icon: MessagesSquare },
     { id: 'tools', label: 'Admin Tools', icon: Settings },
   ];
 
@@ -1580,6 +1584,7 @@ const AdminLayout = ({ children }) => {
 const AdminRouter = ({ route }) => {
   if (route.includes('new-product')) return <AdminNewProduct />;
   if (route.includes('members')) return <SupabaseAdminMembers />;
+  if (route.includes('chats')) return <AdminProductChat />;
   if (route.includes('tools')) return <AdminTools />;
   if (route.includes('products')) return <AdminProducts />;
   if (route.includes('orders')) return <SupabaseAdminOrders />;

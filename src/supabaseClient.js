@@ -16,3 +16,15 @@ const supabasePublishableKey =
   fallbackSupabaseAnonKey;
 
 export const supabase = createClient(supabaseUrl, supabasePublishableKey);
+
+// Product chat uses a separate persisted anonymous Auth session. This keeps
+// guest chat ownership isolated from the storefront's customer/admin session
+// while still allowing RLS to protect each browser's conversation history.
+export const chatSupabase = createClient(supabaseUrl, supabasePublishableKey, {
+  auth: {
+    storageKey: 'wenappliances-chat-auth',
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false
+  }
+});
