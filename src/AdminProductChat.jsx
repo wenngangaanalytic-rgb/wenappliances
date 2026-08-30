@@ -81,8 +81,14 @@ export default function AdminProductChat() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState('');
+  const [isOtherPartyTyping, setIsOtherPartyTyping] = useState(false);
   const activeThreadKeyRef = useRef(activeThreadKey);
   const messagesEndRef = useRef(null);
+  const replyInputRef = useRef(null);
+  const typingChannelRef = useRef(null);
+  const typingActiveRef = useRef(false);
+  const typingStopTimeoutRef = useRef(null);
+  const incomingTypingTimeoutRef = useRef(null);
 
   useEffect(() => {
     activeThreadKeyRef.current = activeThreadKey;
@@ -96,6 +102,68 @@ export default function AdminProductChat() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeThread?.messages, activeThreadKey]);
+
+  useEffect(() => {
+    const input = replyInputRef.current;
+    if (!input) return;
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(input.scrollHeight, 128)}px`;
+  }, [replyDraft]);
+
+  useEffect(() => {
+    const thread = activeThread;
+    setIsOtherPartyTyping(false);
+    typingActiveRef.current = false;
+    if (typingStopTimeoutRef.current) clearTimeout(typingStopTimeoutRef.current);
+    if (incomingTypingTimeoutRef.current) clearTimeout(incomingTypingTimeoutRef.current);
+
+    if (!thread) {
+      typingChannelRef.current = null;
+      return undefined;
+    }
+
+    const channel = supabase
+      .channel(`product-chat-${thread.sessionId}-${thread.productId}`)
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (payload?.sender_role !== 'customer') return;
+        const typing = Boolean(payload.isTyping);
+        setIsOtherPartyTyping(typing);
+        if (incomingTypingTimeoutRef.current) clearTimeout(incomingTypingTimeoutRef.current);
+        if (typing) {
+          incomingTypingTimeoutRef.current = setTimeout(() => setIsOtherPartyTyping(false), 2200);
+        }
+      })
+      .subscribe();
+
+    typingChannelRef.current = channel;
+
+    return () => {
+      if (typingStopTimeoutRef.current) clearTimeout(typingStopTimeoutRef.current);
+      if (incomingTypingTimeoutRef.current) clearTimeout(incomingTypingTimeoutRef.current);
+      typingActiveRef.current = false;
+      if (typingChannelRef.current === channel) typingChannelRef.current = null;
+      void supabase.removeChannel(channel);
+    };
+  }, [activeThread?.key]);
+
+  const broadcastTyping = (isTyping) => {
+    const channel = typingChannelRef.current;
+    if (!channel) return;
+
+    if (typingActiveRef.current !== isTyping) {
+      typingActiveRef.current = isTyping;
+      void channel.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: { sender_role: 'admin', isTyping }
+      });
+    }
+
+    if (typingStopTimeoutRef.current) clearTimeout(typingStopTimeoutRef.current);
+    if (isTyping) {
+      typingStopTimeoutRef.current = setTimeout(() => broadcastTyping(false), 1800);
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -219,6 +287,7 @@ export default function AdminProductChat() {
       return;
     }
 
+    broadcastTyping(false);
     setIsSending(true);
     try {
       const { data, error: insertError } = await supabase
@@ -315,17 +384,52 @@ export default function AdminProductChat() {
                     <div key={message.id} className={`flex ${isCustomerMessage ? 'justify-start' : 'justify-end'}`}>
                       <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm shadow-sm ${isCustomerMessage ? 'rounded-bl-md border border-[#34383D] bg-[#24272A] text-[#F1F3EF]' : 'rounded-br-md bg-[#9C6644] text-white'}`}>
                         <p className="whitespace-pre-wrap break-words">{message.content}</p>
-                        <p className="mt-1 text-[10px] text-white/60">{formatMessageTime(message.created_at)}</p>
+                        <p className={`mt-1 text-[10px] ${isCustomerMessage ? 'admin-chat-customer-time' : 'text-white/70'}`}>{formatMessageTime(message.created_at)}</p>
                       </div>
                     </div>
                   );
                 })}
+                {isOtherPartyTyping && (
+                  <div className="flex justify-start" aria-live="polite">
+                    <div className="admin-chat-typing inline-flex items-center gap-2 rounded-2xl rounded-bl-md border border-[#34383D] bg-[#24272A] px-4 py-3 text-xs">
+                      <span>Customer is typing</span>
+                      <span className="inline-flex items-center gap-1" aria-hidden="true">
+                        <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
+                        <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
+                        <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
+                      </span>
+                    </div>
+                  </div>
+                )}
                 <div ref={messagesEndRef} />
               </div>
 
               <form onSubmit={sendReply} className="flex items-end gap-3 border-t border-[#24272A] bg-[#17191C] p-4">
                 <label htmlFor="admin-product-chat-reply" className="sr-only">Reply to customer</label>
-                <textarea id="admin-product-chat-reply" value={replyDraft} onChange={(event) => setReplyDraft(event.target.value)} maxLength={MAX_MESSAGE_LENGTH} rows="2" placeholder="Write a reply..." disabled={isSending} className="min-h-11 grow resize-y rounded-xl border border-[#34383D] bg-[#0B0B0C] px-3 py-2 text-sm text-[#F1F3EF] outline-none transition focus:border-[#9C6644] disabled:opacity-60" />
+                <div className="min-w-0 grow">
+                  <textarea
+                    id="admin-product-chat-reply"
+                    ref={replyInputRef}
+                    value={replyDraft}
+                    onChange={(event) => {
+                      setReplyDraft(event.target.value);
+                      broadcastTyping(Boolean(event.target.value.trim()));
+                    }}
+                    onBlur={() => broadcastTyping(false)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        if (replyDraft.trim()) void sendReply(event);
+                      }
+                    }}
+                    maxLength={MAX_MESSAGE_LENGTH}
+                    rows="1"
+                    placeholder="Write a reply..."
+                    disabled={isSending}
+                    className="min-h-11 max-h-32 w-full resize-none overflow-y-auto rounded-xl border border-[#34383D] bg-[#0B0B0C] px-3 py-2 text-sm text-[#F1F3EF] outline-none transition focus:border-[#9C6644] disabled:opacity-60"
+                  />
+                  <p className="mt-1 px-1 text-[11px] text-[#858884]">Enter to send · Shift+Enter for a new line</p>
+                </div>
                 <button type="submit" disabled={isSending || !replyDraft.trim()} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#9C6644] text-white transition hover:bg-[#8A5A3C] disabled:cursor-not-allowed disabled:opacity-50" aria-label="Send reply">
                   {isSending ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
                 </button>

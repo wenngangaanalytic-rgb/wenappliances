@@ -16,7 +16,7 @@ const appendUniqueMessage = (currentMessages, nextMessage) => {
 
 const formatMessageTime = (value) => {
   if (!value) return '';
-  return new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 };
 
 export default function ProductChatWidget({ productId, productName, inlineTrigger = false }) {
@@ -29,8 +29,14 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState('');
+  const [isOtherPartyTyping, setIsOtherPartyTyping] = useState(false);
   const isOpenRef = useRef(isOpen);
   const messagesEndRef = useRef(null);
+  const messageInputRef = useRef(null);
+  const realtimeChannelRef = useRef(null);
+  const typingActiveRef = useRef(false);
+  const typingStopTimeoutRef = useRef(null);
+  const incomingTypingTimeoutRef = useRef(null);
 
   useEffect(() => {
     isOpenRef.current = isOpen;
@@ -46,6 +52,13 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
   }, [messages, isOpen]);
 
   useEffect(() => {
+    const input = messageInputRef.current;
+    if (!input) return;
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(input.scrollHeight, 128)}px`;
+  }, [messageDraft]);
+
+  useEffect(() => {
     if (!productId) return undefined;
 
     let cancelled = false;
@@ -56,6 +69,7 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
     setSessionId(currentSessionId);
     setMessages([]);
     setUnreadCount(0);
+    setIsOtherPartyTyping(false);
     setOwnerId('');
     setError('');
     setIsLoading(true);
@@ -82,6 +96,15 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
 
         channel = chatSupabase
           .channel(`product-chat-${currentSessionId}-${currentProductId}`)
+          .on('broadcast', { event: 'typing' }, ({ payload }) => {
+            if (payload?.sender_role !== 'admin') return;
+            const typing = Boolean(payload.isTyping);
+            setIsOtherPartyTyping(typing);
+            if (incomingTypingTimeoutRef.current) clearTimeout(incomingTypingTimeoutRef.current);
+            if (typing) {
+              incomingTypingTimeoutRef.current = setTimeout(() => setIsOtherPartyTyping(false), 2200);
+            }
+          })
           .on(
             'postgres_changes',
             {
@@ -117,6 +140,7 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
             }
           )
           .subscribe();
+        realtimeChannelRef.current = channel;
       } catch (loadError) {
         if (cancelled) return;
         const message = loadError?.message || 'Unable to load product chat.';
@@ -131,7 +155,11 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
 
     return () => {
       cancelled = true;
-      if (channel) chatSupabase.removeChannel(channel);
+      if (typingStopTimeoutRef.current) clearTimeout(typingStopTimeoutRef.current);
+      if (incomingTypingTimeoutRef.current) clearTimeout(incomingTypingTimeoutRef.current);
+      typingActiveRef.current = false;
+      if (realtimeChannelRef.current === channel) realtimeChannelRef.current = null;
+      if (channel) void chatSupabase.removeChannel(channel);
     };
   }, [productId]);
 
@@ -169,6 +197,25 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
     });
   };
 
+  const broadcastTyping = (isTyping) => {
+    const channel = realtimeChannelRef.current;
+    if (!channel) return;
+
+    if (typingActiveRef.current !== isTyping) {
+      typingActiveRef.current = isTyping;
+      void channel.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: { sender_role: 'customer', isTyping }
+      });
+    }
+
+    if (typingStopTimeoutRef.current) clearTimeout(typingStopTimeoutRef.current);
+    if (isTyping) {
+      typingStopTimeoutRef.current = setTimeout(() => broadcastTyping(false), 1800);
+    }
+  };
+
   const sendMessage = async (event) => {
     event.preventDefault();
     const content = messageDraft.trim();
@@ -178,6 +225,7 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
       return;
     }
 
+    broadcastTyping(false);
     setIsSending(true);
     try {
       const { data, error: insertError } = await chatSupabase
@@ -205,9 +253,9 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
   };
 
   return (
-    <div className={inlineTrigger ? 'contents' : 'fixed bottom-4 right-4 z-40 flex flex-col items-end'}>
+    <div className={inlineTrigger ? 'relative inline-flex shrink-0 flex-col items-end' : 'fixed bottom-4 right-4 z-40 flex flex-col items-end'}>
       {isOpen && (
-        <section id="product-chat-window" className="mb-3 flex h-[min(70vh,520px)] w-[min(calc(100vw-2rem),380px)] flex-col overflow-hidden rounded-2xl border border-[#E5E4E0] bg-white text-[#111214] shadow-2xl" aria-label={`Chat about ${productName}`}>
+        <section id="product-chat-window" className={`mb-3 flex h-auto min-h-[320px] max-h-[min(78vh,680px)] w-[min(calc(100vw-2rem),380px)] shrink-0 flex-col overflow-hidden rounded-2xl border border-[#E5E4E0] bg-white text-[#111214] shadow-2xl ${inlineTrigger ? 'fixed bottom-4 right-4 z-[70]' : ''}`} aria-label={`Chat about ${productName}`}>
           <header className="flex items-start justify-between gap-3 bg-[#111214] px-4 py-4 text-white">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-wider text-[#D8B49A]">WenAppliances support</p>
@@ -218,7 +266,7 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
             </button>
           </header>
 
-          <div className="min-h-0 grow space-y-3 overflow-y-auto bg-[#F8F7F4] p-4" aria-live="polite">
+          <div className="min-h-[180px] max-h-[min(58vh,520px)] grow space-y-3 overflow-y-auto bg-[#F8F7F4] p-4" aria-live="polite">
             {isLoading && (
               <div className="flex items-center justify-center gap-2 py-10 text-sm text-[#667085]"><LoaderCircle className="h-4 w-4 animate-spin" /> Loading chat...</div>
             )}
@@ -239,21 +287,47 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
                 </div>
               );
             })}
+            {isOtherPartyTyping && (
+              <div className="flex justify-start" aria-live="polite">
+                <div className="inline-flex items-center gap-2 rounded-2xl rounded-bl-md border border-[#E5E4E0] bg-white px-3.5 py-2.5 text-xs text-[#667085] shadow-sm">
+                  <span>Admin is typing</span>
+                  <span className="inline-flex items-center gap-1" aria-hidden="true">
+                    <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
+                    <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
+                    <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
+                  </span>
+                </div>
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
 
           <form onSubmit={sendMessage} className="flex items-end gap-2 border-t border-[#E5E4E0] bg-white p-3">
             <label htmlFor="product-chat-message" className="sr-only">Message WenAppliances support</label>
-            <textarea
-              id="product-chat-message"
-              value={messageDraft}
-              onChange={(event) => setMessageDraft(event.target.value)}
-              maxLength={MAX_MESSAGE_LENGTH}
-              rows="1"
-              placeholder="Write a question..."
-              disabled={isLoading || Boolean(error) || isSending}
-              className="max-h-24 min-h-10 grow resize-y rounded-xl border border-[#E5E4E0] px-3 py-2 text-sm outline-none transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20 disabled:bg-[#F4F3EF]"
-            />
+            <div className="min-w-0 grow">
+              <textarea
+                id="product-chat-message"
+                ref={messageInputRef}
+                value={messageDraft}
+                onChange={(event) => {
+                  setMessageDraft(event.target.value);
+                  broadcastTyping(Boolean(event.target.value.trim()));
+                }}
+                onBlur={() => broadcastTyping(false)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    if (messageDraft.trim()) void sendMessage(event);
+                  }
+                }}
+                maxLength={MAX_MESSAGE_LENGTH}
+                rows="1"
+                placeholder="Write a question..."
+                disabled={isLoading || Boolean(error) || isSending}
+                className="max-h-32 min-h-10 w-full resize-none overflow-y-auto rounded-xl border border-[#E5E4E0] px-3 py-2 text-sm outline-none transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20 disabled:bg-[#F4F3EF]"
+              />
+              <p className="mt-1 px-1 text-[11px] text-[#667085]">Enter to send · Shift+Enter for a new line</p>
+            </div>
             <button type="submit" disabled={isLoading || Boolean(error) || isSending || !messageDraft.trim()} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#9C6644] text-white transition hover:bg-[#8A5A3C] disabled:cursor-not-allowed disabled:opacity-50" aria-label="Send message">
               {isSending ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
             </button>

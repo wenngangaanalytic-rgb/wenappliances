@@ -1995,6 +1995,7 @@ const ProductEditor = ({ product, onSave, onCancel }) => {
                   <option value="Refrigerators" />
                   <option value="Washers" />
                   <option value="Dryers" />
+                  <option value="Washer & Dryer" />
                   <option value="Ovens" />
                   <option value="Microwaves" />
                   <option value="TVs" />

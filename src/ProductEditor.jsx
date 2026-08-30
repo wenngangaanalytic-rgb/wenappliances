@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { supabase } from './supabaseClient';
 
@@ -22,11 +22,20 @@ const createUniqueFilePath = (file) => {
 export default function ProductEditor({ onSaved }) {
   const [formData, setFormData] = useState(initialForm);
   const [selectedFiles, setSelectedFiles] = useState([]);
+  const [coverIndex, setCoverIndex] = useState(0);
+  const [previewUrls, setPreviewUrls] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    const nextPreviewUrls = selectedFiles.map((file) => URL.createObjectURL(file));
+    setPreviewUrls(nextPreviewUrls);
+
+    return () => nextPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+  }, [selectedFiles]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -42,6 +51,7 @@ export default function ProductEditor({ onSaved }) {
         ? 'Only JPG, PNG, WEBP, and GIF images are allowed.'
         : `${invalidFile.name} is larger than the 10 MB image limit.`;
       setSelectedFiles([]);
+      setCoverIndex(0);
       if (fileInputRef.current) fileInputRef.current.value = '';
       setError(message);
       toast.error(message);
@@ -49,6 +59,7 @@ export default function ProductEditor({ onSaved }) {
     }
 
     setSelectedFiles(files);
+    setCoverIndex(0);
     setError('');
     setSuccessMessage('');
   };
@@ -96,8 +107,12 @@ export default function ProductEditor({ onSaved }) {
 
     try {
       const imageUrls = [];
+      const orderedFiles = [
+        selectedFiles[coverIndex],
+        ...selectedFiles.filter((_, index) => index !== coverIndex)
+      ];
 
-      for (const file of selectedFiles) {
+      for (const file of orderedFiles) {
         const uniqueFilePath = createUniqueFilePath(file);
         const { error: uploadError } = await supabase.storage
           .from('Wenappliances')
@@ -131,6 +146,7 @@ export default function ProductEditor({ onSaved }) {
 
       setFormData(initialForm);
       setSelectedFiles([]);
+      setCoverIndex(0);
       setIsDragActive(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
       const message = 'Appliance saved successfully.';
@@ -213,11 +229,34 @@ export default function ProductEditor({ onSaved }) {
             <span className="mt-1 text-xs text-[#858884]">JPG, PNG, WEBP, or GIF · up to 10 MB each · multiple images supported</span>
             <input id="product-images" ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onChange={handleFileChange} className="sr-only" />
           </label>
-          <p id="product-images-help" className="mt-2 text-xs text-[#858884]">{selectedFiles.length > 0 ? `${selectedFiles.length} image(s) selected` : 'Choose at least one image for this appliance.'}</p>
+          <p id="product-images-help" className="mt-2 text-xs text-[#858884]">{selectedFiles.length > 0 ? `${selectedFiles.length} image(s) selected · choose a cover below` : 'Choose at least one image for this appliance.'}</p>
           {selectedFiles.length > 0 && (
-            <ul className="mt-3 grid gap-2 text-xs text-[#B8BAB7] sm:grid-cols-2" aria-label="Selected images">
-              {selectedFiles.map((file) => <li key={`${file.name}-${file.lastModified}`} className="truncate rounded-md border border-[#24272A] bg-[#0B0B0C] px-3 py-2">{file.name}</li>)}
-            </ul>
+            <div className="mt-4 rounded-xl border border-[#24272A] bg-[#0B0B0C] p-3">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#B8BAB7]">Choose cover photo</p>
+                <p className="text-xs text-[#858884]">The cover appears first in the catalog.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {selectedFiles.map((file, index) => (
+                  <button
+                    type="button"
+                    key={`${file.name}-${file.lastModified}-${index}`}
+                    onClick={() => setCoverIndex(index)}
+                    className={`group overflow-hidden rounded-xl border-2 text-left transition hover:-translate-y-0.5 hover:shadow-lg ${index === coverIndex ? 'border-[#C08457] shadow-lg shadow-[#9C6644]/20' : 'border-[#24272A] hover:border-[#9C6644]'}`}
+                    aria-pressed={index === coverIndex}
+                    aria-label={`${index === coverIndex ? 'Cover photo, ' : 'Set as cover photo, '}${file.name}`}
+                  >
+                    <div className="relative aspect-square bg-white">
+                      {previewUrls[index] && <img src={previewUrls[index]} alt={`Preview of ${file.name}`} className="product-photo h-full w-full object-contain" />}
+                      <span className={`absolute left-2 top-2 rounded px-2 py-1 text-[10px] font-bold ${index === coverIndex ? 'bg-[#9C6644] text-white' : 'bg-black/70 text-white'}`}>
+                        {index === coverIndex ? 'COVER PHOTO' : `PHOTO ${index + 1}`}
+                      </span>
+                    </div>
+                    <span className="block truncate bg-[#17191C] px-2 py-2 text-xs text-[#B8BAB7]" title={file.name}>{file.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
         </div>
 
