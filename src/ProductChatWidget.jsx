@@ -282,8 +282,8 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
               aria-label="Close product chat"
             />
           )}
-          <section id="product-chat-window" className={`flex h-auto min-h-[320px] max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] shrink-0 flex-col overflow-hidden rounded-2xl border border-[#E5E4E0] bg-white text-[#111214] shadow-2xl sm:w-[min(calc(100vw-2rem),500px)] ${inlineTrigger ? 'fixed left-1/2 top-1/2 z-[70] -translate-x-1/2 -translate-y-1/2' : 'fixed bottom-4 right-4 z-[70] sm:w-[min(calc(100vw-2rem),380px)]'}`} role="dialog" aria-modal="true" aria-label={`Chat about ${productName}`}>
-          <header className="flex items-start justify-between gap-3 bg-[#111214] px-4 py-4 text-white">
+          <section id="product-chat-window" className={`flex h-[min(680px,calc(100dvh-2rem))] min-h-0 max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] shrink-0 flex-col overflow-hidden rounded-2xl border border-[#E5E4E0] bg-white text-[#111214] shadow-2xl sm:w-[min(calc(100vw-2rem),500px)] ${inlineTrigger ? 'fixed left-1/2 top-1/2 z-[70] -translate-x-1/2 -translate-y-1/2' : 'fixed bottom-4 right-4 z-[70] sm:w-[min(calc(100vw-2rem),380px)]'}`} role="dialog" aria-modal="true" aria-label={`Chat about ${productName}`}>
+          <header className="flex shrink-0 items-start justify-between gap-3 bg-[#111214] px-4 py-4 text-white">
             <div className="min-w-0">
               <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#D8B49A]" aria-live="polite">
                 <span>{isOtherPartyTyping ? 'Admin is typing' : 'WenAppliances support'}</span>
@@ -302,7 +302,20 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
             </button>
           </header>
 
-          <div className="min-h-0 max-h-[min(58dvh,520px)] grow space-y-3 overflow-y-auto overscroll-contain bg-[#F8F7F4] p-4" aria-live="polite">
+          {isOtherPartyTyping && (
+            <div className="flex shrink-0 items-center gap-2 border-b border-[#E5E4E0] bg-[#FFF9F4] px-4 py-2 text-xs font-semibold text-[#8A5A3C]" role="status" aria-live="polite">
+              <span className="inline-flex items-center gap-1 rounded-full border border-[#D8B49A] bg-white px-2.5 py-1 shadow-sm">
+                <span>Admin is typing</span>
+                <span className="inline-flex items-center gap-1" aria-hidden="true">
+                  <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
+                  <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
+                  <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
+                </span>
+              </span>
+            </div>
+          )}
+
+          <div className="min-h-0 grow space-y-3 overflow-y-auto overscroll-contain bg-[#F8F7F4] p-4" aria-live="polite">
             {isLoading && (
               <div className="flex items-center justify-center gap-2 py-10 text-sm text-[#667085]"><LoaderCircle className="h-4 w-4 animate-spin" /> Loading chat...</div>
             )}
@@ -338,7 +351,7 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
             <div ref={messagesEndRef} />
           </div>
 
-          <form onSubmit={sendMessage} className="flex items-end gap-2 border-t border-[#E5E4E0] bg-white p-3">
+          <form onSubmit={sendMessage} className="flex shrink-0 items-end gap-2 border-t border-[#E5E4E0] bg-white p-3">
             <label htmlFor="product-chat-message" className="sr-only">Message WenAppliances support</label>
             <div className="min-w-0 grow">
               <textarea
