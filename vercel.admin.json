@@ -1,6 +1,20 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://nupuzbammbdunvurjgzv.supabase.co; connect-src 'self' https://nupuzbammbdunvurjgzv.supabase.co wss://nupuzbammbdunvurjgzv.supabase.co https://vitals.vercel-insights.com; font-src 'self' data:; worker-src 'self' blob:; manifest-src 'self'; frame-src 'none'" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=()" },
+        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin-allow-popups" },
+        { "key": "Access-Control-Allow-Origin", "value": "https://wenappliances-admin.vercel.app" }
+      ]
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",
