@@ -23,6 +23,7 @@ export default function ProductEditor({ onSaved }) {
   const [formData, setFormData] = useState(initialForm);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDragActive, setIsDragActive] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const fileInputRef = useRef(null);
@@ -32,8 +33,8 @@ export default function ProductEditor({ onSaved }) {
     setFormData((current) => ({ ...current, [name]: value }));
   };
 
-  const handleFileChange = (event) => {
-    const files = Array.from(event.target.files ?? []);
+  const handleFiles = (fileList) => {
+    const files = Array.from(fileList ?? []);
     const invalidFile = files.find((file) => !ALLOWED_IMAGE_TYPES.has(file.type) || file.size > MAX_IMAGE_SIZE_BYTES);
 
     if (invalidFile) {
@@ -50,6 +51,23 @@ export default function ProductEditor({ onSaved }) {
     setSelectedFiles(files);
     setError('');
     setSuccessMessage('');
+  };
+
+  const handleFileChange = (event) => {
+    handleFiles(event.target.files);
+  };
+
+  const handleDrop = (event) => {
+    event.preventDefault();
+    setIsDragActive(false);
+    handleFiles(event.dataTransfer.files);
+  };
+
+  const handleDropZoneKeyDown = (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      fileInputRef.current?.click();
+    }
   };
 
   const handleSubmit = async (event) => {
@@ -113,6 +131,7 @@ export default function ProductEditor({ onSaved }) {
 
       setFormData(initialForm);
       setSelectedFiles([]);
+      setIsDragActive(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
       const message = 'Appliance saved successfully.';
       setSuccessMessage(message);
@@ -171,8 +190,35 @@ export default function ProductEditor({ onSaved }) {
 
         <div>
           <label htmlFor="product-images" className="mb-2 block text-sm font-semibold">Product images</label>
-          <input id="product-images" ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileChange} required className="block w-full cursor-pointer rounded-lg border border-[#24272A] bg-[#0B0B0C] text-sm text-[#B8BAB7] file:mr-4 file:border-0 file:bg-[#24272A] file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-[#F1F3EF] hover:file:bg-[#9C6644]" />
-          <p className="mt-2 text-xs text-[#858884]">{selectedFiles.length > 0 ? `${selectedFiles.length} image(s) selected` : 'You can select multiple images.'}</p>
+          <label
+            htmlFor="product-images"
+            onDragOver={(event) => {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = 'copy';
+              setIsDragActive(true);
+            }}
+            onDragEnter={() => setIsDragActive(true)}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setIsDragActive(false);
+            }}
+            onDrop={handleDrop}
+            onKeyDown={handleDropZoneKeyDown}
+            tabIndex="0"
+            role="button"
+            aria-describedby="product-images-help"
+            className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-5 py-8 text-center transition-colors focus:outline-none focus:ring-2 focus:ring-[#9C6644] ${isDragActive ? 'border-[#C08457] bg-[#9C6644]/15' : 'border-[#3A3D40] bg-[#0B0B0C] hover:border-[#9C6644] hover:bg-[#1D2023]'}`}
+          >
+            <span className="text-base font-semibold text-[#F1F3EF]">{isDragActive ? 'Drop images here' : 'Drag and drop product images here'}</span>
+            <span className="mt-2 text-sm text-[#B8BAB7]">or click to choose files</span>
+            <span className="mt-1 text-xs text-[#858884]">JPG, PNG, WEBP, or GIF · up to 10 MB each · multiple images supported</span>
+            <input id="product-images" ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onChange={handleFileChange} className="sr-only" />
+          </label>
+          <p id="product-images-help" className="mt-2 text-xs text-[#858884]">{selectedFiles.length > 0 ? `${selectedFiles.length} image(s) selected` : 'Choose at least one image for this appliance.'}</p>
+          {selectedFiles.length > 0 && (
+            <ul className="mt-3 grid gap-2 text-xs text-[#B8BAB7] sm:grid-cols-2" aria-label="Selected images">
+              {selectedFiles.map((file) => <li key={`${file.name}-${file.lastModified}`} className="truncate rounded-md border border-[#24272A] bg-[#0B0B0C] px-3 py-2">{file.name}</li>)}
+            </ul>
+          )}
         </div>
 
         <button type="submit" disabled={isSubmitting} className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#9C6644] px-4 py-3 font-bold text-white transition hover:bg-[#8A5A3C] disabled:cursor-not-allowed disabled:opacity-60">
