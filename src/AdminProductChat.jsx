@@ -66,6 +66,14 @@ const formatMessageTime = (value) => {
 
 const formatSessionLabel = (sessionId) => `User ${(sessionId || '').replace(/^chat-/i, '').slice(0, 4) || 'guest'}`;
 
+const getRequestedThreadKey = () => {
+  try {
+    return new URLSearchParams(window.location.search).get('thread') || '';
+  } catch {
+    return '';
+  }
+};
+
 export default function AdminProductChat() {
   const [threads, setThreads] = useState([]);
   const [activeThreadKey, setActiveThreadKey] = useState('');
@@ -110,9 +118,12 @@ export default function AdminProductChat() {
       } else {
         const nextThreads = buildThreads(data ?? []);
         setThreads(nextThreads);
+        const requestedThreadKey = getRequestedThreadKey();
         setActiveThreadKey((currentKey) => (
-          currentKey && nextThreads.some((thread) => thread.key === currentKey)
-            ? currentKey
+          requestedThreadKey && nextThreads.some((thread) => thread.key === requestedThreadKey)
+            ? requestedThreadKey
+            : currentKey && nextThreads.some((thread) => thread.key === currentKey)
+              ? currentKey
             : nextThreads[0]?.key || ''
         ));
       }

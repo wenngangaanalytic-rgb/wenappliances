@@ -39,7 +39,9 @@ export const showOrderNotification = async ({
 
   try {
     if ('serviceWorker' in navigator) {
-      const registration = await navigator.serviceWorker.ready;
+      // getRegistration() resolves immediately when the storefront has no
+      // service worker, allowing the native Notification fallback below.
+      const registration = await navigator.serviceWorker.getRegistration();
       if (registration?.showNotification) {
         await registration.showNotification(title, options);
         return true;
@@ -62,6 +64,22 @@ export const showOrderNotification = async ({
     return false;
   }
 };
+
+export const showChatNotification = async ({
+  isAdmin = false,
+  productName,
+  content,
+  tag,
+  url
+}) => showOrderNotification({
+  title: isAdmin ? 'New customer message' : `WenAppliances · ${productName || 'Product chat'}`,
+  body: isAdmin
+    ? `${productName || 'A customer'}: ${String(content || '').trim()}`
+    : `A reply is waiting about ${productName || 'your product'}: ${String(content || '').trim()}`,
+  tag,
+  url,
+  icon: '/wen-icon.png'
+});
 
 export const rememberOrderForNotifications = (orderId, email) => {
   const normalizedId = String(orderId || '').trim();

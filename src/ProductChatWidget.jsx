@@ -2,32 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { LoaderCircle, MessageCircle, Send, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { chatSupabase } from './supabaseClient';
+import { ensureChatIdentity, getChatSessionId } from './chatSession';
 
-const CHAT_SESSION_KEY = 'chat_session_id';
 const MAX_MESSAGE_LENGTH = 2000;
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-const createUuid = () => {
-  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
-    const random = Math.random() * 16 | 0;
-    const value = character === 'x' ? random : (random & 0x3) | 0x8;
-    return value.toString(16);
-  });
-};
-
-const getChatSessionId = () => {
-  try {
-    const storedId = window.localStorage.getItem(CHAT_SESSION_KEY);
-    if (storedId && UUID_PATTERN.test(storedId)) return storedId;
-
-    const newId = createUuid();
-    window.localStorage.setItem(CHAT_SESSION_KEY, newId);
-    return newId;
-  } catch {
-    return createUuid();
-  }
-};
 
 const appendUniqueMessage = (currentMessages, nextMessage) => {
   if (currentMessages.some((message) => message.id === nextMessage.id)) return currentMessages;
@@ -42,19 +19,7 @@ const formatMessageTime = (value) => {
   return new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 };
 
-const ensureChatIdentity = async () => {
-  const { data: sessionData } = await chatSupabase.auth.getSession();
-  if (sessionData?.session?.user) return sessionData.session.user;
-
-  const { data, error } = await chatSupabase.auth.signInAnonymously();
-  if (error || !data?.user) {
-    throw new Error('Chat is temporarily unavailable. Please try again shortly.');
-  }
-
-  return data.user;
-};
-
-export default function ProductChatWidget({ productId, productName }) {
+export default function ProductChatWidget({ productId, productName, inlineTrigger = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [messageDraft, setMessageDraft] = useState('');
@@ -70,6 +35,11 @@ export default function ProductChatWidget({ productId, productName }) {
   useEffect(() => {
     isOpenRef.current = isOpen;
   }, [isOpen]);
+
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (query.get('chat') === '1') setIsOpen(true);
+  }, [productId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -235,7 +205,7 @@ export default function ProductChatWidget({ productId, productName }) {
   };
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end">
+    <div className={inlineTrigger ? 'contents' : 'fixed bottom-4 right-4 z-40 flex flex-col items-end'}>
       {isOpen && (
         <section id="product-chat-window" className="mb-3 flex h-[min(70vh,520px)] w-[min(calc(100vw-2rem),380px)] flex-col overflow-hidden rounded-2xl border border-[#E5E4E0] bg-white text-[#111214] shadow-2xl" aria-label={`Chat about ${productName}`}>
           <header className="flex items-start justify-between gap-3 bg-[#111214] px-4 py-4 text-white">
@@ -291,9 +261,10 @@ export default function ProductChatWidget({ productId, productName }) {
         </section>
       )}
 
-      <button type="button" onClick={toggleChat} className="relative grid h-14 w-14 place-items-center rounded-full bg-[#9C6644] text-white shadow-xl transition hover:bg-[#8A5A3C]" aria-label={isOpen ? 'Close product chat' : 'Open product chat'} aria-expanded={isOpen} aria-controls="product-chat-window">
-        {isOpen ? <X className="h-6 w-6" aria-hidden="true" /> : <MessageCircle className="h-6 w-6" aria-hidden="true" />}
-        {!isOpen && unreadCount > 0 && (
+      <button type="button" onClick={toggleChat} className={inlineTrigger ? 'inline-flex items-center gap-2 rounded-xl border border-[#9C6644] bg-[#9C6644] px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#8A5A3C] hover:shadow-lg' : 'relative grid h-14 w-14 place-items-center rounded-full bg-[#9C6644] text-white shadow-xl transition hover:bg-[#8A5A3C]'} aria-label={isOpen ? 'Close product chat' : 'Ask about product'} aria-expanded={isOpen} aria-controls="product-chat-window">
+        {isOpen ? <X className="h-5 w-5" aria-hidden="true" /> : <MessageCircle className="h-5 w-5" aria-hidden="true" />}
+        {inlineTrigger && <span>{isOpen ? 'Close chat' : 'Ask about product'}</span>}
+        {!inlineTrigger && !isOpen && unreadCount > 0 && (
           <span className="absolute -right-1 -top-1 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white ring-2 ring-white" aria-label={`${unreadCount} unread chat messages`}>
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>

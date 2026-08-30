@@ -20,6 +20,7 @@ import AdminProductChat from './AdminProductChat';
 import AccountMenu from './AccountMenu';
 import ResetPassword from './ResetPassword';
 import ProductChatWidget from './ProductChatWidget';
+import { ChatNotificationBell, ChatNotificationProvider } from './ChatNotifications';
 import PresenceTracker from './PresenceTracker';
 import OrderNotificationPrompt from './OrderNotificationPrompt';
 import { AdminOrderNotificationWatcher, CustomerOrderNotificationWatcher } from './OrderNotificationWatchers';
@@ -556,14 +557,16 @@ export default function App() {
   };
 
   return (
-    <AppContext.Provider value={contextValue}>
-      <div className="min-h-screen font-sans bg-[#F4F3EF] text-[#111214] antialiased">
-        {renderRoute()}
-      </div>
-      <OrderNotificationPrompt isAdmin={isAdminApp} active={!isAdminApp || user?.role === 'SUPER_ADMIN'} />
-      {isAdminApp ? <AdminOrderNotificationWatcher user={user} /> : <CustomerOrderNotificationWatcher user={user} refreshKey={trackingPrefill?.orderId} />}
-      <PresenceTracker user={user} />
-    </AppContext.Provider>
+    <ChatNotificationProvider isAdmin={isAdminApp} active={!isAdminApp || user?.role === 'SUPER_ADMIN'}>
+      <AppContext.Provider value={contextValue}>
+        <div className="min-h-screen font-sans bg-[#F4F3EF] text-[#111214] antialiased">
+          {renderRoute()}
+        </div>
+        <OrderNotificationPrompt isAdmin={isAdminApp} active={!isAdminApp || user?.role === 'SUPER_ADMIN'} />
+        {isAdminApp ? <AdminOrderNotificationWatcher user={user} /> : <CustomerOrderNotificationWatcher user={user} refreshKey={trackingPrefill?.orderId} />}
+        <PresenceTracker user={user} />
+      </AppContext.Provider>
+    </ChatNotificationProvider>
   );
 }
 
@@ -683,6 +686,7 @@ const StoreLayout = ({ children }) => {
               )}
             </div>
             
+            <ChatNotificationBell />
             <AccountMenu user={user} onTrackOrder={() => navigate('/track-order')} onMyOrders={() => navigate('/my-orders')} />
 
             <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
@@ -1240,6 +1244,7 @@ const StoreProductDetail = ({ id }) => {
                 </button>
               </div>
               <span className="text-sm text-[#858884]">{product.stock} available</span>
+              <ProductChatWidget productId={product.id} productName={product.name} inlineTrigger />
             </div>
             
             <button 
@@ -1262,7 +1267,6 @@ const StoreProductDetail = ({ id }) => {
           </div>
         </div>
       </div>
-      <ProductChatWidget productId={product.id} productName={product.name} />
     </div>
   );
 };
@@ -1538,6 +1542,7 @@ const AdminLayout = ({ children }) => {
              <span className="sm:hidden">Admin</span>
            </div>
              <div className="flex items-center gap-3">
+             <ChatNotificationBell />
              <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
              <a href={storefrontUrl} className="text-xs bg-[#24272A] hover:bg-[#1D2023] px-3 py-1.5 rounded border border-[#4A5568]/30 transition-colors">
                <span className="hidden sm:inline">View Public Storefront</span>
