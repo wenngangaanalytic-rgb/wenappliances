@@ -154,7 +154,7 @@ export default function ProductEditor({ onSaved }) {
           <div>
             <label htmlFor="product-category" className="mb-2 block text-sm font-semibold">Category</label>
             <select id="product-category" name="category" value={formData.category} onChange={handleChange} required className="w-full rounded-lg border border-[#24272A] bg-[#0B0B0C] px-3 py-2.5 outline-none focus:border-[#9C6644]">
-              <option>Refrigerators</option><option>Washers</option><option>Dryers</option><option>Ovens</option><option>Microwaves</option><option>Dishwashers</option><option>TVs</option><option>Other</option>
+              <option>Refrigerators</option><option>Washers</option><option>Dryers</option><option>Washer &amp; Dryer</option><option>Ovens</option><option>Microwaves</option><option>Dishwashers</option><option>TVs</option><option>Other</option>
             </select>
           </div>
 

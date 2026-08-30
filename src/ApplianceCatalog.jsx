@@ -5,6 +5,7 @@ const BASE_CATEGORIES = [
   'Refrigerators',
   'Washers',
   'Dryers',
+  'Washer & Dryer',
   'Ovens',
   'Microwaves',
   'Dishwashers',

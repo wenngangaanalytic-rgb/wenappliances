@@ -52,6 +52,18 @@ const Logo = ({ className = "", dark = false }) => (
   </div>
 );
 
+const STORE_CATEGORIES = [
+  'Refrigerators',
+  'Washers',
+  'Dryers',
+  'Washer & Dryer',
+  'Ovens',
+  'Microwaves',
+  'Dishwashers',
+  'TVs',
+  'Other'
+];
+
 const ThemeToggle = ({ theme, toggleTheme }) => (
   <button
     type="button"
@@ -559,11 +571,47 @@ export default function App() {
 // ============================================================================
 
 const StoreLayout = ({ children }) => {
-  const { cartItemCount, setIsCartOpen, navigate, user, searchQuery, setSearchQuery, setActiveCategory, productsLoading, productsError, loadProducts, theme, toggleTheme } = useContext(AppContext);
+  const { cartItemCount, setIsCartOpen, navigate, user, products, searchQuery, setSearchQuery, setActiveCategory, productsLoading, productsError, loadProducts, theme, toggleTheme } = useContext(AppContext);
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [contactSent, setContactSent] = useState(false);
   const [newsletterEmail, setNewsletterEmail] = useState('');
   const [newsletterMessage, setNewsletterMessage] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+
+  const searchSuggestions = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return [];
+
+    const suggestions = [];
+    const seen = new Set();
+    const addSuggestion = (value, type) => {
+      const normalizedValue = value.trim();
+      const key = normalizedValue.toLowerCase();
+      if (!normalizedValue || seen.has(key)) return;
+      seen.add(key);
+      suggestions.push({ value: normalizedValue, type });
+    };
+
+    (products ?? [])
+      .filter((product) => product.status !== 'ARCHIVED')
+      .forEach((product) => {
+        const productName = String(product.name ?? '').trim();
+        if (productName.toLowerCase().includes(query)) addSuggestion(productName, 'Product');
+      });
+
+    STORE_CATEGORIES
+      .filter((category) => category.toLowerCase().includes(query))
+      .forEach((category) => addSuggestion(category, 'Category'));
+
+    return suggestions.slice(0, 6);
+  }, [products, searchQuery]);
+
+  const chooseSearchSuggestion = (value) => {
+    setSearchQuery(value);
+    setActiveCategory('');
+    setIsSearchOpen(false);
+    navigate('/products');
+  };
 
   const handleNewsletterSubmit = (event) => {
     event.preventDefault();
@@ -603,14 +651,34 @@ const StoreLayout = ({ children }) => {
                 type="text" 
                 placeholder="Search products..." 
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => setIsSearchOpen(true)}
+                onChange={(e) => { setSearchQuery(e.target.value); setIsSearchOpen(true); }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
+                    setIsSearchOpen(false);
                     navigate('/products');
                   }
+                  if (e.key === 'Escape') setIsSearchOpen(false);
                 }}
                 className="pl-10 pr-4 py-2 bg-white border border-[#E5E4E0] rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-[#9C6644]/50 w-64 transition-all"
               />
+              {isSearchOpen && searchSuggestions.length > 0 && (
+                <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-xl border border-[#E5E4E0] bg-white py-1 shadow-xl" role="listbox" aria-label="Search suggestions">
+                  {searchSuggestions.map((suggestion) => (
+                    <button
+                      key={`${suggestion.type}-${suggestion.value}`}
+                      type="button"
+                      role="option"
+                      aria-selected="false"
+                      onClick={() => chooseSearchSuggestion(suggestion.value)}
+                      className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm text-[#111214] transition-colors hover:bg-[#F4F3EF]"
+                    >
+                      <span className="truncate">{suggestion.value}</span>
+                      <span className="shrink-0 text-xs text-[#858884]">{suggestion.type}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             
             <AccountMenu user={user} onTrackOrder={() => navigate('/track-order')} onMyOrders={() => navigate('/my-orders')} />
@@ -940,7 +1008,7 @@ const StoreCatalog = () => {
     return true;
   });
 
-  const categories = ['Refrigerators', 'Washers', 'Dryers', 'Ovens', 'Microwaves', 'TVs', 'Other'];
+  const categories = STORE_CATEGORIES;
 
   return (
     <div className="motion-fade-up max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
