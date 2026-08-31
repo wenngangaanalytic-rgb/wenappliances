@@ -274,6 +274,24 @@ html[data-theme='light'] .product-photo,
   animation: wen-chat-details-in 180ms ease-out both;
 }
 
+.product-chat-trigger {
+  max-inline-size: 100%;
+}
+
+.product-chat__textarea:focus,
+.product-chat__textarea:focus-visible,
+.admin-chat-textarea:focus,
+.admin-chat-textarea:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+@media (max-width: 480px) {
+  .product-chat-trigger__label {
+    max-inline-size: min(12rem, 60vw);
+  }
+}
+
 @keyframes wen-chat-details-in {
   from { opacity: 0; transform: translateY(-6px); }
   to { opacity: 1; transform: translateY(0); }

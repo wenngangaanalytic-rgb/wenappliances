@@ -1391,8 +1391,8 @@ const StoreProductDetail = ({ id }) => {
           </p>
           
           <div className="mt-auto space-y-6">
-            <div className="flex flex-wrap items-center gap-3 sm:flex-nowrap">
-              <div className="flex min-w-0 flex-1 items-center gap-3 sm:flex-initial">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex min-w-0 flex-1 items-center gap-3">
                 <div className="min-w-[4.75rem] shrink-0">
                   <span className="block text-sm font-semibold text-[#4A5568]">Quantity</span>
                   <span className="mt-1 block text-xs text-[#858884]">{product.stock} available</span>

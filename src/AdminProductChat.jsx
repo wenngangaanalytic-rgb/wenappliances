@@ -578,7 +578,7 @@ export default function AdminProductChat() {
 
               <form onSubmit={sendReply} className="admin-product-chat__composer shrink-0 border-t border-stone-200 bg-white p-3 sm:p-4">
                 <label htmlFor="admin-product-chat-reply" className="sr-only">Reply to customer</label>
-                <div className="flex items-end gap-2 rounded-[1.5rem] bg-stone-100 p-1.5 ring-1 ring-inset ring-transparent focus-within:ring-[#c2a792]">
+                <div className="flex items-end gap-2 rounded-[1.5rem] bg-stone-100 p-1.5">
                   <textarea
                     id="admin-product-chat-reply"
                     ref={replyInputRef}
