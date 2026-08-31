@@ -3,6 +3,7 @@ import { Bell, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
   canUseBrowserNotifications,
+  ensureExactAlarmPermission,
   getNotificationPermission,
   isNativeNotificationApp,
   requestBrowserNotificationPermission,
@@ -42,6 +43,9 @@ export default function OrderNotificationPrompt({ isAdmin = false, active = true
     setPermission(nextPermission);
 
     if (nextPermission === 'granted') {
+      if (isNativeNotificationApp()) {
+        await ensureExactAlarmPermission();
+      }
       await showOrderNotification({
         title: isAdmin ? 'Admin Wen notifications enabled' : 'WenAppliances notifications enabled',
         body: isAdmin ? 'You will be alerted when a new order awaits confirmation or a customer cancels.' : 'You will be alerted when your order is confirmed or cancelled.',

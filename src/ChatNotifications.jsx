@@ -7,6 +7,7 @@ import { ensureChatIdentity, getChatSessionId } from './chatSession';
 import { CHAT_ACTIVITY_EVENT, isActiveChat } from './chatActivity';
 import {
   clearNativeChatNotifications,
+  ensureExactAlarmPermission,
   getNotificationPermission,
   isNativeNotificationApp,
   requestBrowserNotificationPermission,
@@ -291,7 +292,10 @@ export function ChatNotificationBell() {
   const enablePopups = async () => {
     const nextPermission = await requestBrowserNotificationPermission();
     setPermission(nextPermission);
-    if (nextPermission === 'granted') toast.success('Chat pop-up notifications are enabled.');
+    if (nextPermission === 'granted') {
+      if (isNativeNotificationApp()) await ensureExactAlarmPermission();
+      toast.success('Chat pop-up notifications are enabled.');
+    }
     if (nextPermission === 'denied') {
       toast.error(isNativeNotificationApp()
         ? 'Notifications are blocked. Allow them in Android Settings for Admin Wen.'
