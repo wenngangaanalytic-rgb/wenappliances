@@ -1,5 +1,17 @@
 apply plugin: 'com.android.application'
 
+def releaseSigningProperties = new Properties()
+def releaseSigningFile = rootProject.file('release-signing.properties')
+if (releaseSigningFile.exists()) {
+    releaseSigningFile.withInputStream { stream -> releaseSigningProperties.load(stream) }
+}
+
+def releaseStoreFile = releaseSigningProperties.getProperty('storeFile') ?: findProperty('RELEASE_STORE_FILE') ?: System.getenv('ANDROID_RELEASE_STORE_FILE')
+def releaseStorePassword = releaseSigningProperties.getProperty('storePassword') ?: findProperty('RELEASE_STORE_PASSWORD') ?: System.getenv('ANDROID_RELEASE_STORE_PASSWORD')
+def releaseKeyAlias = releaseSigningProperties.getProperty('keyAlias') ?: findProperty('RELEASE_KEY_ALIAS') ?: System.getenv('ANDROID_RELEASE_KEY_ALIAS')
+def releaseKeyPassword = releaseSigningProperties.getProperty('keyPassword') ?: findProperty('RELEASE_KEY_PASSWORD') ?: System.getenv('ANDROID_RELEASE_KEY_PASSWORD')
+def releaseSigningReady = [releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every { value -> value }
+
 android {
     namespace = "com.wenappliances.admin"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +19,8 @@ android {
         applicationId "com.wenappliances.admin"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 5
-        versionName "1.1.3"
+        versionCode 7
+        versionName "1.1.5"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +28,19 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (releaseSigningReady) {
+                storeFile rootProject.file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
     buildTypes {
         release {
+            if (releaseSigningReady) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }

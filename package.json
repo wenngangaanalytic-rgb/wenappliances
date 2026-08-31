@@ -12,6 +12,7 @@
     "build:admin": "vite build --mode admin",
     "android:admin:sync": "npm run build:admin && npx cap sync android",
     "android:admin:apk": "npm run android:admin:sync && cd android && gradlew.bat assembleDebug",
+    "android:admin:release": "npm run android:admin:sync && cd android && gradlew.bat assembleRelease",
     "android:admin:open": "npx cap open android",
     "security:audit": "node scripts/security-audit.mjs",
     "preview": "vite preview"
@@ -19,6 +20,7 @@
   "dependencies": {
     "@capacitor/android": "^8.5.0",
     "@capacitor/core": "^8.5.0",
+    "@capacitor/local-notifications": "^8.3.1",
     "@supabase/supabase-js": "^2.112.3",
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",

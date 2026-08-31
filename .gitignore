@@ -8,3 +8,5 @@ dist/
 .idea/
 android/.gradle/
 android/**/build/
+android/release-signing.properties
+android/keystores/

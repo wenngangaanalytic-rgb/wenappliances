@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Bell, Check, ChevronDown, LoaderCircle, MessageSquare, RefreshCw, Send, X } from 'lucide-react';
+import { ArrowLeft, Bell, Check, ChevronDown, LoaderCircle, MessageSquare, RefreshCw, Search, Send, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from './supabaseClient';
 import { emitChatActivity } from './chatActivity';
@@ -66,6 +66,11 @@ const formatMessageTime = (value) => {
   return new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 };
 
+const formatDateHeading = (value) => {
+  if (!value) return '';
+  return new Date(value).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+};
+
 const formatSessionLabel = (sessionId) => `User ${(sessionId || '').replace(/^chat-/i, '').slice(0, 4) || 'guest'}`;
 
 const getRequestedThreadKey = () => {
@@ -85,6 +90,8 @@ export default function AdminProductChat() {
   const [error, setError] = useState('');
   const [isOtherPartyTyping, setIsOtherPartyTyping] = useState(false);
   const [isThreadPickerOpen, setIsThreadPickerOpen] = useState(false);
+  const [threadSearch, setThreadSearch] = useState('');
+  const [isProductDetailsOpen, setIsProductDetailsOpen] = useState(false);
   const activeThreadKeyRef = useRef(activeThreadKey);
   const messagesEndRef = useRef(null);
   const replyInputRef = useRef(null);
@@ -101,6 +108,20 @@ export default function AdminProductChat() {
     () => threads.find((thread) => thread.key === activeThreadKey) || null,
     [activeThreadKey, threads]
   );
+
+  const filteredThreads = useMemo(() => {
+    const normalizedSearch = threadSearch.trim().toLowerCase();
+    if (!normalizedSearch) return threads;
+    return threads.filter((thread) => {
+      const latestMessage = thread.messages[thread.messages.length - 1]?.content || '';
+      return [thread.productName, thread.sessionId, latestMessage]
+        .some((value) => String(value).toLowerCase().includes(normalizedSearch));
+    });
+  }, [threadSearch, threads]);
+
+  useEffect(() => {
+    setIsProductDetailsOpen(false);
+  }, [activeThreadKey]);
 
   useEffect(() => {
     emitChatActivity({
@@ -358,27 +379,27 @@ export default function AdminProductChat() {
         aria-label="Close active thread picker"
       />
       <section
-        className="absolute inset-x-3 bottom-3 flex max-h-[min(76dvh,560px)] flex-col overflow-hidden rounded-3xl border border-[#34383D] bg-[#17191C] shadow-2xl"
+        className="admin-product-chat__picker absolute inset-x-3 bottom-3 flex max-h-[min(76dvh,560px)] flex-col overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-2xl"
         role="dialog"
         aria-modal="true"
         aria-labelledby="admin-thread-picker-title"
       >
-        <header className="flex shrink-0 items-center justify-between border-b border-[#34383D] px-5 py-4">
+         <header className="flex shrink-0 items-center justify-between border-b border-stone-200 px-5 py-4">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#9C6644]">Customer support</p>
-            <h2 id="admin-thread-picker-title" className="mt-1 text-lg font-semibold text-[#F1F3EF]">Choose a conversation</h2>
+             <h2 id="admin-thread-picker-title" className="mt-1 text-lg font-semibold text-gray-900">Choose a conversation</h2>
           </div>
           <button
             type="button"
             onClick={() => setIsThreadPickerOpen(false)}
-            className="rounded-full p-2 text-[#B8BAB7] transition hover:bg-[#24272A] hover:text-[#F1F3EF]"
+             className="rounded-full p-2 text-gray-500 transition hover:bg-stone-100 hover:text-gray-900"
             aria-label="Close conversation picker"
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </header>
-        <div className="min-h-0 grow overflow-y-auto overscroll-contain p-3" role="listbox" aria-label="Active product conversations">
-          {threads.map((thread) => {
+         <div className="min-h-0 grow overflow-y-auto overscroll-contain p-3" role="listbox" aria-label="Active product conversations">
+           {filteredThreads.map((thread) => {
             const isSelected = activeThreadKey === thread.key;
             return (
               <button
@@ -390,142 +411,174 @@ export default function AdminProductChat() {
                   setIsThreadPickerOpen(false);
                   void markThreadRead(thread);
                 }}
-                className={`mb-2 flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition last:mb-0 ${isSelected ? 'border-[#9C6644] bg-[#2A211D]' : 'border-[#34383D] bg-[#0B0B0C] hover:border-[#9C6644]/70 hover:bg-[#1D2023]'}`}
+                 className={`admin-product-chat__picker-row mb-2 flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition last:mb-0 ${isSelected ? 'border-[#c2a792] bg-[#f5f5f7]' : 'border-stone-200 bg-white hover:border-[#c2a792] hover:bg-[#f5f5f7]'}`}
               >
-                <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full ${isSelected ? 'bg-[#9C6644] text-white' : 'bg-[#24272A] text-[#858884]'}`}>
+                 <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full ${isSelected ? 'bg-[#c2a792] text-white' : 'bg-stone-100 text-stone-500'}`}>
                   {isSelected ? <Check className="h-4 w-4" aria-hidden="true" /> : <MessageSquare className="h-4 w-4" aria-hidden="true" />}
                 </span>
                 <span className="min-w-0 grow">
-                  <span className="block truncate text-sm font-semibold text-[#F1F3EF]">{thread.productName}</span>
-                  <span className="mt-1 block text-xs text-[#858884]">{formatSessionLabel(thread.sessionId)}</span>
-                  <span className="mt-1 block truncate text-xs text-[#B8BAB7]">{thread.messages[thread.messages.length - 1]?.content || 'No messages yet'}</span>
+                   <span className="block truncate text-sm font-semibold text-gray-900">{thread.productName}</span>
+                   <span className="mt-1 block text-xs text-gray-400">{formatSessionLabel(thread.sessionId)}</span>
+                   <span className={`mt-1 block truncate text-xs ${thread.unreadCount > 0 ? 'font-medium text-gray-900' : 'text-gray-400'}`}>{thread.messages[thread.messages.length - 1]?.content || 'No messages yet'}</span>
                 </span>
                 {thread.unreadCount > 0 && (
-                  <span className="inline-flex min-w-6 shrink-0 items-center justify-center rounded-full bg-red-600 px-2 py-1 text-[10px] font-bold text-white" aria-label={`${thread.unreadCount} unread messages`}>
+                   <span className="inline-flex min-w-6 shrink-0 items-center justify-center rounded-full bg-[#c2a792] px-2 py-1 text-[10px] font-bold text-white" aria-label={`${thread.unreadCount} unread messages`}>
                     {thread.unreadCount > 9 ? '9+' : thread.unreadCount}
                   </span>
                 )}
               </button>
             );
-          })}
-        </div>
+           })}
+           {!filteredThreads.length && <p className="p-6 text-center text-sm text-gray-500">No matching conversations.</p>}
+         </div>
       </section>
     </div>,
     document.body
   );
 
   return (
-    <section className="space-y-5" aria-labelledby="admin-product-chat-title">
+    <section className="admin-product-chat space-y-5" aria-labelledby="admin-product-chat-title">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wider text-[#9C6644]">Customer support</p>
-          <h1 id="admin-product-chat-title" className="mt-1 flex items-center gap-2 text-2xl font-bold text-[#F1F3EF]"><MessageSquare className="h-6 w-6 text-[#9C6644]" /> Product chats</h1>
-          <p className="mt-1 text-sm text-[#858884]">Keep every product conversation separate and respond in real time.</p>
+          <h1 id="admin-product-chat-title" className="mt-1 flex items-center gap-2 text-2xl font-bold text-gray-900"><MessageSquare className="h-6 w-6 text-[#9C6644]" /> Product chats</h1>
+          <p className="mt-1 text-sm text-gray-500">Keep every product conversation separate and respond in real time.</p>
         </div>
-        <button type="button" onClick={() => window.location.reload()} className="inline-flex items-center gap-2 rounded-lg border border-[#4A5568]/50 bg-[#17191C] px-3 py-2 text-sm font-semibold text-[#B8BAB7] transition hover:border-[#9C6644] hover:text-[#F1F3EF]"><RefreshCw className="h-4 w-4" /> Refresh</button>
+        <button type="button" onClick={() => window.location.reload()} className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-3.5 py-2 text-sm font-semibold text-gray-600 shadow-sm transition hover:border-[#c2a792] hover:text-gray-900"><RefreshCw className="h-4 w-4" /> Refresh</button>
       </div>
 
-      {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300" role="alert">{error}</div>}
+      {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">{error}</div>}
 
       {threads.length > 0 && (
-        <div className="rounded-2xl border border-[#24272A] bg-[#17191C] p-3 shadow-xl lg:hidden">
-          <label htmlFor="admin-product-chat-thread" className="mb-2 block text-xs font-semibold uppercase tracking-wider text-[#858884]">Active thread</label>
-          <div className="flex items-center gap-2">
+        <div className="admin-product-chat__mobile-toolbar rounded-[1.5rem] border border-stone-200 bg-white p-4 shadow-sm lg:hidden">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#9C6644]">Inbox</p>
+              <h2 className="mt-1 text-lg font-semibold text-gray-900">Messages</h2>
+            </div>
+            {threads.some((thread) => thread.unreadCount > 0) && <Bell className="h-5 w-5 text-[#c2a792]" aria-label="Unread customer messages" />}
+          </div>
+          <label className="relative mt-3 block" htmlFor="admin-product-chat-search-mobile">
+            <span className="sr-only">Search conversations</span>
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true" />
+            <input id="admin-product-chat-search-mobile" type="search" value={threadSearch} onChange={(event) => setThreadSearch(event.target.value)} placeholder="Search messages" className="w-full rounded-full border-0 bg-[#F5F5F7] py-3 pl-11 pr-4 text-sm text-gray-900 outline-none ring-1 ring-inset ring-transparent transition placeholder:text-gray-400 focus:ring-[#c2a792]" />
+          </label>
+          <div className="mt-3 flex items-center gap-2">
             <button
               id="admin-product-chat-thread"
               type="button"
               onClick={() => setIsThreadPickerOpen(true)}
-              className="flex min-w-0 grow items-center gap-3 rounded-xl border border-[#9C6644] bg-[#0B0B0C] px-3 py-2.5 text-left text-sm text-[#F1F3EF] outline-none transition hover:bg-[#1D2023] focus-visible:ring-2 focus-visible:ring-[#D8B49A]"
+              className="admin-product-chat__thread-trigger flex min-w-0 grow items-center gap-3 rounded-2xl border border-[#c2a792] bg-[#F5F5F7] px-3.5 py-3 text-left text-sm text-gray-900 outline-none transition hover:bg-stone-100 focus-visible:ring-2 focus-visible:ring-[#c2a792]"
               aria-label="Select active product chat"
               aria-haspopup="listbox"
               aria-expanded={isThreadPickerOpen}
             >
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-stone-100 text-stone-500"><MessageSquare className="h-4 w-4" aria-hidden="true" /></span>
               <span className="min-w-0 grow">
                 <span className="block truncate font-semibold">{activeThread?.productName || 'Choose a conversation'}</span>
-                {activeThread && <span className="mt-0.5 block truncate text-xs text-[#858884]">{formatSessionLabel(activeThread.sessionId)}</span>}
+                {activeThread && <span className="mt-0.5 block truncate text-xs text-gray-400">{formatSessionLabel(activeThread.sessionId)}</span>}
               </span>
-              <ChevronDown className={`h-5 w-5 shrink-0 text-[#B8BAB7] transition-transform ${isThreadPickerOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+              <ChevronDown className={`h-5 w-5 shrink-0 text-gray-500 transition-transform ${isThreadPickerOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
             </button>
-            {activeThread?.unreadCount > 0 && <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-red-600 px-2 py-1 text-[10px] font-bold text-white" aria-label={`${activeThread.unreadCount} unread messages`}>{activeThread.unreadCount > 9 ? '9+' : activeThread.unreadCount}</span>}
+            {activeThread?.unreadCount > 0 && <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-[#c2a792] px-2 py-1 text-[10px] font-bold text-white" aria-label={`${activeThread.unreadCount} unread messages`}>{activeThread.unreadCount > 9 ? '9+' : activeThread.unreadCount}</span>}
           </div>
         </div>
       )}
 
-      <div className="grid h-[min(680px,calc(100dvh-14rem))] min-h-[420px] overflow-hidden rounded-2xl border border-[#24272A] bg-[#17191C] shadow-xl lg:h-[560px] lg:min-h-[560px] lg:grid-cols-[minmax(220px,30%)_1fr]">
-        <aside className="hidden min-h-0 flex-col border-b border-[#24272A] lg:flex lg:border-b-0 lg:border-r" aria-label="Product chat threads">
-          <div className="flex shrink-0 items-center justify-between border-b border-[#24272A] px-4 py-4">
-            <div>
-              <h2 className="font-semibold text-[#F1F3EF]">Active threads</h2>
-              <p className="mt-1 text-xs text-[#858884]">{threads.length} product conversation{threads.length === 1 ? '' : 's'}</p>
+      <div className="admin-product-chat__workspace grid h-[min(720px,calc(100dvh-14rem))] min-h-[460px] overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm lg:h-[600px] lg:min-h-[600px] lg:grid-cols-[minmax(250px,31%)_1fr]">
+        <aside className="admin-product-chat__list hidden min-h-0 flex-col border-b border-stone-200 lg:flex lg:border-b-0 lg:border-r" aria-label="Product chat threads">
+          <div className="sticky top-0 z-10 shrink-0 border-b border-stone-200 bg-white px-5 py-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#9C6644]">Inbox</p>
+                <h2 className="mt-1 text-lg font-semibold text-gray-900">Messages</h2>
+                <p className="mt-1 text-xs text-gray-400">{threads.length} product conversation{threads.length === 1 ? '' : 's'}</p>
+              </div>
+              {threads.some((thread) => thread.unreadCount > 0) && <Bell className="h-5 w-5 text-[#c2a792]" aria-label="Unread customer messages" />}
             </div>
-            {threads.some((thread) => thread.unreadCount > 0) && <Bell className="h-4 w-4 text-red-400" aria-label="Unread customer messages" />}
+            <label className="relative mt-4 block" htmlFor="admin-product-chat-search">
+              <span className="sr-only">Search conversations</span>
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true" />
+              <input id="admin-product-chat-search" type="search" value={threadSearch} onChange={(event) => setThreadSearch(event.target.value)} placeholder="Search messages" className="w-full rounded-full border-0 bg-[#F5F5F7] py-3 pl-11 pr-4 text-sm text-gray-900 outline-none ring-1 ring-inset ring-transparent transition placeholder:text-gray-400 focus:ring-[#c2a792]" />
+            </label>
           </div>
           <div className="min-h-0 grow overflow-y-auto overscroll-contain">
-            {isLoading && <div className="flex items-center justify-center gap-2 p-6 text-sm text-[#858884]"><LoaderCircle className="h-4 w-4 animate-spin" /> Loading threads...</div>}
-            {!isLoading && !threads.length && <p className="p-6 text-center text-sm text-[#858884]">No product conversations yet.</p>}
-            {!isLoading && threads.map((thread) => (
-              <button
-                type="button"
-                key={thread.key}
-                onClick={() => { void markThreadRead(thread); }}
-                className={`w-full border-b border-[#24272A] px-4 py-4 text-left transition-colors hover:bg-[#1D2023] ${activeThreadKey === thread.key ? 'bg-[#24272A]' : ''}`}
-                aria-pressed={activeThreadKey === thread.key}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-[#F1F3EF]">{thread.productName}</p>
-                    <p className="mt-1 truncate font-mono text-xs text-[#858884]">{formatSessionLabel(thread.sessionId)}</p>
-                  </div>
-                  {thread.unreadCount > 0 && <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white" aria-label={`${thread.unreadCount} unread messages`}>{thread.unreadCount > 9 ? '9+' : thread.unreadCount}</span>}
-                </div>
-                <p className="mt-2 truncate text-xs text-[#858884]">{thread.messages[thread.messages.length - 1]?.content}</p>
-              </button>
-            ))}
+            {isLoading && <div className="flex items-center justify-center gap-2 p-6 text-sm text-gray-500"><LoaderCircle className="h-4 w-4 animate-spin" /> Loading threads...</div>}
+            {!isLoading && !threads.length && <p className="p-6 text-center text-sm text-gray-500">No product conversations yet.</p>}
+            {!isLoading && !filteredThreads.length && threads.length > 0 && <p className="p-6 text-center text-sm text-gray-500">No matching conversations.</p>}
+            {!isLoading && filteredThreads.map((thread) => {
+              const latestMessage = thread.messages[thread.messages.length - 1];
+              const isSelected = activeThreadKey === thread.key;
+              return (
+                <button
+                  type="button"
+                  key={thread.key}
+                  onClick={() => { void markThreadRead(thread); }}
+                  className={`admin-product-chat__thread-row flex w-full items-start gap-3 border-b border-stone-100 px-5 py-4 text-left transition hover:bg-[#F5F5F7] ${isSelected ? 'bg-[#F5F5F7]' : ''}`}
+                  aria-pressed={isSelected}
+                >
+                  <span className="relative grid h-10 w-10 shrink-0 place-items-center rounded-full bg-stone-100 text-stone-500"><MessageSquare className="h-4 w-4" aria-hidden="true" />{thread.unreadCount > 0 && <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-[#c2a792] px-1 text-[9px] font-bold text-white" aria-label={`${thread.unreadCount} unread messages`}>{thread.unreadCount > 9 ? '9+' : thread.unreadCount}</span>}</span>
+                  <span className="min-w-0 grow">
+                    <span className="flex items-baseline justify-between gap-2">
+                      <span className="truncate text-sm font-semibold text-gray-900">{thread.productName}</span>
+                      <span className="shrink-0 text-[10px] text-gray-400">{formatMessageTime(thread.lastMessageAt)}</span>
+                    </span>
+                    <span className="mt-1 block truncate text-xs font-medium text-gray-500">{formatSessionLabel(thread.sessionId)}</span>
+                    <span className={`mt-1 block truncate text-xs ${thread.unreadCount > 0 ? 'font-medium text-gray-900' : 'text-gray-400'}`}>{latestMessage?.content || 'No messages yet'}</span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </aside>
 
-        <main className="flex min-h-0 min-w-0 flex-col">
+        <main className="admin-product-chat__conversation flex min-h-0 min-w-0 flex-col bg-white">
           {!activeThread && (
-            <div className="flex grow items-center justify-center p-8 text-center text-sm text-[#858884]">Select a product chat to view the conversation.</div>
+            <div className="flex grow flex-col items-center justify-center gap-3 bg-[#F5F5F7] p-8 text-center text-sm text-gray-500"><span className="grid h-12 w-12 place-items-center rounded-full bg-stone-100 text-stone-500"><MessageSquare className="h-5 w-5" aria-hidden="true" /></span>Select a product chat to view the conversation.</div>
           )}
           {activeThread && (
             <>
-              <header className="shrink-0 border-b border-[#24272A] px-5 py-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-[#9C6644]">{activeThread.productName}</p>
-                <h2 className="mt-1 font-mono text-sm font-semibold text-[#F1F3EF]">{formatSessionLabel(activeThread.sessionId)}</h2>
-                <p className="mt-1 text-xs text-[#858884]">Product ID: {activeThread.productId}</p>
+              <header className="admin-product-chat__chat-header sticky top-0 z-20 flex shrink-0 items-center gap-3 border-b border-stone-200 bg-white px-4 py-3.5 sm:px-5">
+                <button type="button" onClick={() => { setActiveThreadKey(''); setIsProductDetailsOpen(false); }} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-gray-500 transition hover:bg-[#F5F5F7] hover:text-gray-900" aria-label="Back to messages"><ArrowLeft className="h-5 w-5" aria-hidden="true" /></button>
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-stone-100 text-stone-500"><MessageSquare className="h-4 w-4" aria-hidden="true" /></span>
+                <div className="min-w-0 grow text-center">
+                  <h2 className="truncate text-sm font-semibold text-gray-900">{formatSessionLabel(activeThread.sessionId)}</h2>
+                  <button type="button" onClick={() => setIsProductDetailsOpen((open) => !open)} className="mx-auto mt-0.5 inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-gray-500 transition hover:bg-[#F5F5F7] hover:text-gray-900" aria-expanded={isProductDetailsOpen} aria-controls="admin-product-chat-product-details"><span className="truncate">{activeThread.productName}</span><ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${isProductDetailsOpen ? 'rotate-180' : ''}`} aria-hidden="true" /></button>
+                </div>
+                <button type="button" onClick={() => window.location.reload()} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-gray-400 transition hover:bg-[#F5F5F7] hover:text-gray-900" aria-label="Refresh chat"><RefreshCw className="h-4 w-4" aria-hidden="true" /></button>
               </header>
 
-              <div className="min-h-0 grow space-y-4 overflow-y-auto overscroll-contain bg-[#0B0B0C] p-5" aria-live="polite">
+              {isProductDetailsOpen && <div id="admin-product-chat-product-details" className="admin-product-chat__product-details shrink-0 border-b border-stone-200 bg-stone-50 px-5 py-3 text-xs text-gray-500"><p className="font-semibold text-gray-900">{activeThread.productName}</p><p className="mt-1 break-all">Product ID: {activeThread.productId}</p><p className="mt-1">Customer: {formatSessionLabel(activeThread.sessionId)}</p></div>}
+
+              <div className="admin-product-chat__messages min-h-0 grow space-y-4 overflow-y-auto overscroll-contain bg-gray-50/30 p-4 sm:p-5" aria-live="polite">
+                <div className="flex justify-center"><span className="rounded-full bg-white px-3 py-1 text-[10px] font-medium text-gray-400 shadow-sm ring-1 ring-inset ring-stone-200">{formatDateHeading(activeThread.messages[0]?.created_at)}</span></div>
                 {activeThread.messages.map((message) => {
                   const isCustomerMessage = message.sender_role === 'customer';
                   return (
                     <div key={message.id} className={`flex ${isCustomerMessage ? 'justify-start' : 'justify-end'}`}>
-                      <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm shadow-sm ${isCustomerMessage ? 'rounded-bl-md border border-[#34383D] bg-[#24272A] text-[#F1F3EF]' : 'rounded-br-md bg-[#9C6644] text-white'}`}>
-                        <p className="whitespace-pre-wrap break-words">{message.content}</p>
-                        <p className={`mt-1 text-[10px] ${isCustomerMessage ? 'admin-chat-customer-time' : 'text-white/70'}`}>{formatMessageTime(message.created_at)}</p>
+                      <div className={`max-w-[85%] ${isCustomerMessage ? 'items-start' : 'items-end'} flex flex-col`}>
+                        <div className={`rounded-2xl px-4 py-3 text-sm shadow-sm ${isCustomerMessage ? 'rounded-tl-sm border border-stone-200 bg-white text-gray-900' : 'rounded-tr-sm bg-stone-800 text-white'}`}>
+                          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                        </div>
+                        <p className={`mt-1 text-[10px] ${isCustomerMessage ? 'admin-chat-customer-time text-left' : 'text-right text-gray-400'}`}>{formatMessageTime(message.created_at)}</p>
                       </div>
                     </div>
                   );
                 })}
                 {isOtherPartyTyping && (
                   <div className="flex justify-start" aria-live="polite">
-                    <div className="admin-chat-typing inline-flex items-center gap-2 rounded-2xl rounded-bl-md border border-[#34383D] bg-[#24272A] px-4 py-3 text-xs">
+                    <div className="admin-chat-typing inline-flex items-center gap-2 rounded-2xl rounded-tl-sm border border-stone-200 bg-white px-4 py-3 text-xs shadow-sm">
                       <span>Customer is typing</span>
-                      <span className="inline-flex items-center gap-1" aria-hidden="true">
-                        <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
-                        <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
-                        <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
-                      </span>
+                      <span className="inline-flex items-center gap-1" aria-hidden="true"><span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" /><span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" /><span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" /></span>
                     </div>
                   </div>
                 )}
                 <div ref={messagesEndRef} />
               </div>
 
-              <form onSubmit={sendReply} className="flex shrink-0 items-end gap-3 border-t border-[#24272A] bg-[#17191C] p-4">
+              <form onSubmit={sendReply} className="admin-product-chat__composer shrink-0 border-t border-stone-200 bg-white p-3 sm:p-4">
                 <label htmlFor="admin-product-chat-reply" className="sr-only">Reply to customer</label>
-                <div className="min-w-0 grow">
+                <div className="flex items-end gap-2 rounded-[1.5rem] bg-stone-100 p-1.5 ring-1 ring-inset ring-transparent focus-within:ring-[#c2a792]">
                   <textarea
                     id="admin-product-chat-reply"
                     ref={replyInputRef}
@@ -545,13 +598,13 @@ export default function AdminProductChat() {
                     rows="1"
                     placeholder="Write a reply..."
                     disabled={isSending}
-                    className="min-h-11 max-h-32 w-full resize-none overflow-y-auto rounded-xl border border-[#34383D] bg-[#0B0B0C] px-3 py-2 text-sm text-[#F1F3EF] outline-none transition focus:border-[#9C6644] disabled:opacity-60"
+                    className="admin-chat-textarea min-h-10 max-h-32 min-w-0 grow resize-none overflow-y-auto rounded-full border-0 bg-transparent px-3 py-2 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:ring-0 disabled:opacity-60"
                   />
-                  <p className="mt-1 px-1 text-[11px] text-[#858884]">Enter to send · Shift+Enter for a new line</p>
+                  <button type="submit" disabled={isSending || !replyDraft.trim()} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#c2a792] text-white transition hover:bg-[#aa8d76] disabled:cursor-not-allowed disabled:bg-stone-300" aria-label="Send reply">
+                    {isSending ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
+                  </button>
                 </div>
-                <button type="submit" disabled={isSending || !replyDraft.trim()} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#9C6644] text-white transition hover:bg-[#8A5A3C] disabled:cursor-not-allowed disabled:opacity-50" aria-label="Send reply">
-                  {isSending ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
-                </button>
+                <p className="mt-1 text-center text-[10px] text-gray-400">Press Enter to send</p>
               </form>
             </>
           )}

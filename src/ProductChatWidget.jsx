@@ -21,6 +21,11 @@ const formatMessageTime = (value) => {
   return new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 };
 
+const formatDateHeading = (value) => {
+  if (!value) return '';
+  return new Date(value).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+};
+
 export default function ProductChatWidget({ productId, productName, inlineTrigger = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -282,63 +287,55 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
               aria-label="Close product chat"
             />
           )}
-          <section id="product-chat-window" className={`flex h-[min(680px,calc(100dvh-2rem))] min-h-0 max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] shrink-0 flex-col overflow-hidden rounded-2xl border border-[#E5E4E0] bg-white text-[#111214] shadow-2xl sm:w-[min(calc(100vw-2rem),500px)] ${inlineTrigger ? 'fixed left-1/2 top-1/2 z-[70] -translate-x-1/2 -translate-y-1/2' : 'fixed bottom-4 right-4 z-[70] sm:w-[min(calc(100vw-2rem),380px)]'}`} role="dialog" aria-modal="true" aria-label={`Chat about ${productName}`}>
-          <header className="flex shrink-0 items-start justify-between gap-3 bg-[#111214] px-4 py-4 text-white">
-            <div className="min-w-0">
-              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#D8B49A]" aria-live="polite">
+          <section id="product-chat-window" className={`product-chat-surface flex h-[min(680px,calc(100dvh-2rem))] min-h-0 max-h-[calc(100dvh-2rem)] max-w-md shrink-0 flex-col overflow-hidden rounded-[2rem] border border-stone-200 bg-white text-gray-900 shadow-xl ${inlineTrigger ? 'fixed left-1/2 top-1/2 z-[70] w-[min(calc(100vw-2rem),28rem)] -translate-x-1/2 -translate-y-1/2' : 'fixed bottom-4 right-4 z-[70] w-[min(calc(100vw-2rem),24rem)]'}`} role="dialog" aria-modal="true" aria-label={`Chat about ${productName}`}>
+          <header className="product-chat__header flex shrink-0 items-center gap-3 border-b border-stone-200 bg-white px-5 py-4">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-stone-100 text-stone-500"><MessageCircle className="h-5 w-5" aria-hidden="true" /></span>
+            <div className="min-w-0 grow">
+              <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#9C6644]" aria-live="polite">
                 <span>{isOtherPartyTyping ? 'Admin is typing' : 'WenAppliances support'}</span>
-                {isOtherPartyTyping && (
-                  <span className="inline-flex items-center gap-1" aria-hidden="true">
-                    <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
-                    <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
-                    <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
-                  </span>
-                )}
+                {isOtherPartyTyping && <span className="inline-flex items-center gap-1" aria-hidden="true"><span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" /><span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" /><span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" /></span>}
               </p>
-              <h2 className="mt-1 truncate text-base font-bold">Questions about {productName}?</h2>
+              <h2 className="mt-1 truncate text-sm font-semibold text-gray-900">Questions about {productName}?</h2>
             </div>
-            <button type="button" onClick={toggleChat} className="rounded-lg p-1.5 text-white/70 transition hover:bg-white/10 hover:text-white" aria-label="Close product chat">
+            <button type="button" onClick={toggleChat} className="rounded-full p-2 text-gray-400 transition hover:bg-[#F5F5F7] hover:text-gray-900" aria-label="Close product chat">
               <X className="h-5 w-5" aria-hidden="true" />
             </button>
           </header>
 
           {isOtherPartyTyping && (
-            <div className="flex shrink-0 items-center gap-2 border-b border-[#E5E4E0] bg-[#FFF9F4] px-4 py-2 text-xs font-semibold text-[#8A5A3C]" role="status" aria-live="polite">
-              <span className="inline-flex items-center gap-1 rounded-full border border-[#D8B49A] bg-white px-2.5 py-1 shadow-sm">
+            <div className="product-chat__typing flex shrink-0 items-center gap-2 border-b border-stone-200 bg-[#F5F5F7] px-5 py-2 text-xs font-semibold text-[#8A5A3C]" role="status" aria-live="polite">
+              <span className="inline-flex items-center gap-1 rounded-full border border-[#c2a792] bg-white px-2.5 py-1 shadow-sm">
                 <span>Admin is typing</span>
-                <span className="inline-flex items-center gap-1" aria-hidden="true">
-                  <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
-                  <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
-                  <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
-                </span>
+                <span className="inline-flex items-center gap-1" aria-hidden="true"><span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" /><span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" /><span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" /></span>
               </span>
             </div>
           )}
 
-          <div className="min-h-0 grow space-y-3 overflow-y-auto overscroll-contain bg-[#F8F7F4] p-4" aria-live="polite">
+          <div className="product-chat__messages min-h-0 grow space-y-3 overflow-y-auto overscroll-contain bg-gray-50/30 p-4 sm:p-5" aria-live="polite">
             {isLoading && (
-              <div className="flex items-center justify-center gap-2 py-10 text-sm text-[#667085]"><LoaderCircle className="h-4 w-4 animate-spin" /> Loading chat...</div>
+              <div className="flex items-center justify-center gap-2 py-10 text-sm text-gray-500"><LoaderCircle className="h-4 w-4 animate-spin" /> Loading chat...</div>
             )}
-            {!isLoading && error && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+            {!isLoading && error && <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
             {!isLoading && !error && messages.length === 0 && (
-              <div className="rounded-xl border border-dashed border-[#D8D6CF] bg-white p-4 text-center text-sm text-[#667085]">
+              <div className="rounded-2xl border border-dashed border-stone-200 bg-white p-4 text-center text-sm text-gray-500">
                 Ask us anything about this appliance and we will get back to you.
               </div>
             )}
+            {!isLoading && !error && messages.length > 0 && <div className="flex justify-center"><span className="rounded-full bg-white px-3 py-1 text-[10px] font-medium text-gray-400 shadow-sm ring-1 ring-inset ring-stone-200">{formatDateHeading(messages[0]?.created_at)}</span></div>}
             {messages.map((message) => {
               const isCustomerMessage = message.sender_role === 'customer';
               return (
                 <div key={message.id} className={`flex ${isCustomerMessage ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm shadow-sm ${isCustomerMessage ? 'rounded-br-md bg-[#111214] text-white' : 'rounded-bl-md border border-[#E5E4E0] bg-white text-[#344054]'}`}>
+                  <div className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm shadow-sm ${isCustomerMessage ? 'rounded-tr-md bg-stone-800 text-white' : 'rounded-tl-md border border-stone-200 bg-white text-gray-900'}`}>
                     <p className="whitespace-pre-wrap break-words">{message.content}</p>
-                    <p className={`mt-1 text-[10px] ${isCustomerMessage ? 'text-white/60' : 'text-[#98A2B3]'}`}>{formatMessageTime(message.created_at)}</p>
+                    <p className={`mt-1 text-[10px] ${isCustomerMessage ? 'text-right text-white/60' : 'text-left text-gray-400'}`}>{formatMessageTime(message.created_at)}</p>
                   </div>
                 </div>
               );
             })}
             {isOtherPartyTyping && (
               <div className="flex justify-start" aria-live="polite">
-                <div className="inline-flex items-center gap-2 rounded-2xl rounded-bl-md border border-[#E5E4E0] bg-white px-3.5 py-2.5 text-xs text-[#667085] shadow-sm">
+                <div className="inline-flex items-center gap-2 rounded-2xl rounded-tl-md border border-stone-200 bg-white px-3.5 py-2.5 text-xs text-gray-500 shadow-sm">
                   <span>Admin is typing</span>
                   <span className="inline-flex items-center gap-1" aria-hidden="true">
                     <span className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-current" />
@@ -351,9 +348,9 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
             <div ref={messagesEndRef} />
           </div>
 
-          <form onSubmit={sendMessage} className="flex shrink-0 items-end gap-2 border-t border-[#E5E4E0] bg-white p-3">
+          <form onSubmit={sendMessage} className="product-chat__composer shrink-0 border-t border-stone-200 bg-white p-3 sm:p-4">
             <label htmlFor="product-chat-message" className="sr-only">Message WenAppliances support</label>
-            <div className="min-w-0 grow">
+            <div className="flex items-end gap-2 rounded-[1.5rem] bg-stone-100 p-1.5 ring-1 ring-inset ring-transparent focus-within:ring-[#c2a792]">
               <textarea
                 id="product-chat-message"
                 ref={messageInputRef}
@@ -373,13 +370,13 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
                 rows="1"
                 placeholder="Write a question..."
                 disabled={isLoading || Boolean(error) || isSending}
-                className="max-h-32 min-h-10 w-full resize-none overflow-y-auto rounded-xl border border-[#E5E4E0] px-3 py-2 text-sm outline-none transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20 disabled:bg-[#F4F3EF]"
+                className="product-chat__textarea min-h-10 max-h-32 min-w-0 grow resize-none overflow-y-auto rounded-full border-0 bg-transparent px-3 py-2 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:ring-0 disabled:opacity-60"
               />
-              <p className="mt-1 px-1 text-[11px] text-[#667085]">Enter to send · Shift+Enter for a new line</p>
+              <button type="submit" disabled={isLoading || Boolean(error) || isSending || !messageDraft.trim()} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#c2a792] text-white transition hover:bg-[#aa8d76] disabled:cursor-not-allowed disabled:bg-stone-300" aria-label="Send message">
+                {isSending ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
+              </button>
             </div>
-            <button type="submit" disabled={isLoading || Boolean(error) || isSending || !messageDraft.trim()} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#9C6644] text-white transition hover:bg-[#8A5A3C] disabled:cursor-not-allowed disabled:opacity-50" aria-label="Send message">
-              {isSending ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
-            </button>
+            <p className="mt-1 text-center text-[10px] text-gray-400">Press Enter to send</p>
           </form>
           </section>
     </>,

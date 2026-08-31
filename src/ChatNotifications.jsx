@@ -6,7 +6,9 @@ import { chatSupabase, supabase } from './supabaseClient';
 import { ensureChatIdentity, getChatSessionId } from './chatSession';
 import { CHAT_ACTIVITY_EVENT, isActiveChat } from './chatActivity';
 import {
+  clearNativeChatNotifications,
   getNotificationPermission,
+  isNativeNotificationApp,
   requestBrowserNotificationPermission,
   showChatNotification
 } from './browserNotifications';
@@ -63,6 +65,8 @@ export function ChatNotificationProvider({ isAdmin = false, active = true, child
   const [notifications, setNotifications] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const [permission, setPermission] = useState(getNotificationPermission);
+  const notificationsRef = useRef([]);
+  const seenMessageIdsRef = useRef(new Set());
   const activeChatRef = useRef({ isOpen: false, isAdmin, sessionId: '', productId: '' });
 
   useEffect(() => {
@@ -83,7 +87,14 @@ export function ChatNotificationProvider({ isAdmin = false, active = true, child
         const activeKey = isAdmin
           ? `${activeChatRef.current.sessionId}::${activeChatRef.current.productId}`
           : activeChatRef.current.productId;
-        setNotifications((current) => current.filter((notification) => notification.key !== activeKey));
+        setNotifications((current) => {
+          const next = current.filter((notification) => notification.key !== activeKey);
+          notificationsRef.current = next;
+          return next;
+        });
+        void clearNativeChatNotifications({
+          threadKey: `${activeChatRef.current.sessionId}::${activeChatRef.current.productId}`
+        });
       }
     };
 
@@ -117,14 +128,18 @@ export function ChatNotificationProvider({ isAdmin = false, active = true, child
       const { data, error } = await query;
       if (cancelled) return;
       if (error) {
+        notificationsRef.current = [];
         setNotifications([]);
         return;
       }
 
-      setNotifications(buildNotifications(
-        (data ?? []).filter((message) => !isActiveChat(activeChatRef.current, message, isAdmin)),
-        isAdmin
-      ));
+      const visibleMessages = (data ?? []).filter((message) => !isActiveChat(activeChatRef.current, message, isAdmin));
+      const nextNotifications = buildNotifications(visibleMessages, isAdmin);
+      notificationsRef.current = nextNotifications;
+      visibleMessages.forEach((message) => {
+        if (message?.id) seenMessageIdsRef.current.add(message.id);
+      });
+      setNotifications(nextNotifications);
     };
 
     const start = async () => {
@@ -151,7 +166,34 @@ export function ChatNotificationProvider({ isAdmin = false, active = true, child
               || (!isAdmin && String(incomingMessage.owner_id) !== String(ownerId))
             ) return;
 
-            if (isActiveChat(activeChatRef.current, incomingMessage, isAdmin)) {
+            if (incomingMessage?.id && seenMessageIdsRef.current.has(incomingMessage.id)) return;
+            if (incomingMessage?.id) {
+              seenMessageIdsRef.current.add(incomingMessage.id);
+              if (seenMessageIdsRef.current.size > 500) {
+                seenMessageIdsRef.current = new Set([...seenMessageIdsRef.current].slice(-250));
+              }
+            }
+
+            const isInActiveChat = isActiveChat(activeChatRef.current, incomingMessage, isAdmin);
+            const currentUnreadCount = notificationsRef.current.reduce((total, item) => total + item.count, 0);
+
+            // Native alerts are intentionally shown even while the matching chat
+            // is open. The active thread is already read in the UI, and its alert
+            // is cleared shortly after the customer/admin has seen it.
+            void showChatNotification({
+              isAdmin,
+              productName: incomingMessage.product_name,
+              content: incomingMessage.content,
+              url: isAdmin
+                ? `/chats?thread=${encodeURIComponent(getThreadKey(incomingMessage))}`
+                : `/product/${encodeURIComponent(incomingMessage.product_id)}?chat=1`,
+              tag: `chat-${isAdmin ? 'admin' : 'customer'}-${getNotificationKey(incomingMessage, isAdmin)}`,
+              badge: isInActiveChat ? currentUnreadCount : currentUnreadCount + 1,
+              threadKey: getThreadKey(incomingMessage),
+              autoDismissAfterMs: isInActiveChat ? 4500 : 0
+            });
+
+            if (isInActiveChat) {
               let readQuery = client
                 .from('messages')
                 .update({ is_read: true })
@@ -171,17 +213,9 @@ export function ChatNotificationProvider({ isAdmin = false, active = true, child
               const key = getNotificationKey(incomingMessage, isAdmin);
               const existing = current.find((item) => item.key === key);
               const next = makeNotification(incomingMessage, isAdmin, (existing?.count || 0) + 1);
-              return sortNotifications([next, ...current.filter((item) => item.key !== key)]);
-            });
-
-            void showChatNotification({
-              isAdmin,
-              productName: incomingMessage.product_name,
-              content: incomingMessage.content,
-              url: isAdmin
-                ? `/chats?thread=${encodeURIComponent(getThreadKey(incomingMessage))}`
-                : `/product/${encodeURIComponent(incomingMessage.product_id)}?chat=1`,
-              tag: `chat-${isAdmin ? 'admin' : 'customer'}-${getNotificationKey(incomingMessage, isAdmin)}`
+              const nextNotifications = sortNotifications([next, ...current.filter((item) => item.key !== key)]);
+              notificationsRef.current = nextNotifications;
+              return nextNotifications;
             });
           }
         )
@@ -258,7 +292,11 @@ export function ChatNotificationBell() {
     const nextPermission = await requestBrowserNotificationPermission();
     setPermission(nextPermission);
     if (nextPermission === 'granted') toast.success('Chat pop-up notifications are enabled.');
-    if (nextPermission === 'denied') toast.error('Notifications are blocked in your browser settings.');
+    if (nextPermission === 'denied') {
+      toast.error(isNativeNotificationApp()
+        ? 'Notifications are blocked. Allow them in Android Settings for Admin Wen.'
+        : 'Notifications are blocked in your browser settings.');
+    }
   };
 
   const openNotification = (notification) => {

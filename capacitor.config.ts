@@ -6,6 +6,11 @@ const config: CapacitorConfig = {
   webDir: 'dist/admin',
   android: {
     allowMixedContent: false
+  },
+  plugins: {
+    LocalNotifications: {
+      iconColor: '#9C6644'
+    }
   }
 };
 

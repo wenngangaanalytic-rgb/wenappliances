@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import {
   canUseBrowserNotifications,
   getNotificationPermission,
+  isNativeNotificationApp,
   requestBrowserNotificationPermission,
   showOrderNotification
 } from './browserNotifications';
@@ -53,7 +54,9 @@ export default function OrderNotificationPrompt({ isAdmin = false, active = true
     }
 
     if (nextPermission === 'denied') {
-      toast.error('Notifications are blocked. Allow them in your browser site settings.');
+      toast.error(isNativeNotificationApp()
+        ? 'Notifications are blocked. Allow them in Android Settings for Admin Wen.'
+        : 'Notifications are blocked. Allow them in your browser site settings.');
     }
   };
 
@@ -71,7 +74,11 @@ export default function OrderNotificationPrompt({ isAdmin = false, active = true
         <div>
           <p className="font-bold">{isAdmin ? 'New order alerts' : 'Order updates'}</p>
           <p className={`mt-1 text-xs ${isAdmin ? 'text-slate-300' : 'text-[#4A5568]'}`}>
-            {isBlocked ? 'Notifications are blocked. Allow them in browser site settings.' : isAdmin ? 'Get a popup when a customer places or cancels an order.' : 'Get a popup when WenAppliances confirms or cancels your order.'}
+            {isBlocked
+              ? isNativeNotificationApp()
+                ? 'Notifications are blocked. Allow them in Android Settings for Admin Wen.'
+                : 'Notifications are blocked. Allow them in browser site settings.'
+              : isAdmin ? 'Get a popup when a customer places or cancels an order.' : 'Get a popup when WenAppliances confirms or cancels your order.'}
           </p>
         </div>
       </div>
