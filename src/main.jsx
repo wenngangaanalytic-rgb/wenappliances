@@ -39,24 +39,14 @@ createRoot(document.getElementById('root')).render(
   </React.StrictMode>
 );
 
-if ((isAdminBuild || isAdminHost) && 'serviceWorker' in navigator) {
+if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/admin-service-worker.js').catch((error) => {
-      console.warn('WenAppliances notification service worker could not be registered.', error);
-    });
-  });
-}
+    const serviceWorkerPath = isAdminBuild || isAdminHost
+      ? '/admin-service-worker.js'
+      : '/service-worker.js';
 
-// Remove the old customer installable-app service worker from browsers that
-// installed it before the storefront was returned to a normal website.
-if (!isAdminBuild && !isAdminHost && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.getRegistrations().then((registrations) => {
-      registrations
-        .filter((registration) => registration.active?.scriptURL.endsWith('/service-worker.js'))
-        .forEach((registration) => registration.unregister());
-    }).catch(() => {
-      // Continue if browser service-worker access is unavailable.
+    navigator.serviceWorker.register(serviceWorkerPath).catch((error) => {
+      console.warn('WenAppliances notification service worker could not be registered.', error);
     });
   });
 }

@@ -84,40 +84,6 @@ export const canUseBrowserNotifications = () =>
 
 export const isNativeNotificationApp = () => isNativeApp();
 
-export const canUseExactAlarmSettings = () => (
-  isNativeApp() && Capacitor.getPlatform() === 'android'
-);
-
-export const getExactAlarmPermission = async () => {
-  if (!canUseExactAlarmSettings()) return 'unsupported';
-
-  try {
-    const result = await LocalNotifications.checkExactNotificationSetting();
-    return result?.exact_alarm || 'denied';
-  } catch (error) {
-    console.warn('Exact alarm setting unavailable:', error);
-    return 'denied';
-  }
-};
-
-export const requestExactAlarmPermission = async () => {
-  if (!canUseExactAlarmSettings()) return 'unsupported';
-
-  try {
-    const result = await LocalNotifications.changeExactNotificationSetting();
-    return result?.exact_alarm || 'denied';
-  } catch (error) {
-    console.warn('Could not open Android Alarms & reminders settings:', error);
-    return 'denied';
-  }
-};
-
-export const ensureExactAlarmPermission = async () => {
-  const current = await getExactAlarmPermission();
-  if (current === 'granted' || current === 'unsupported') return current;
-  return requestExactAlarmPermission();
-};
-
 export const getNotificationPermission = () => {
   if (isNativeApp()) {
     try {

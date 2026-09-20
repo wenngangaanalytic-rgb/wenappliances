@@ -10,6 +10,7 @@ export default defineConfig(({ mode }) => ({
         if (mode !== 'admin') return html;
 
         return html
+          .replace('href="/manifest.json"', 'href="/admin-manifest.json"')
           .replaceAll('WenAppliances premium appliance store', 'Secure Admin Wen administration portal')
           .replaceAll('WenAppliances', 'Admin Wen')
           .replace('name="robots" content="index, follow"', 'name="robots" content="noindex, nofollow"')

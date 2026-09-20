@@ -124,47 +124,6 @@ html[data-theme='dark'] body {
   color: #f1f3ef;
 }
 
-/* Admin Wen mobile shell: keep the app comfortable below the phone header,
-   keyboard, gesture bar, and the fixed quick-navigation strip. */
-.admin-app-shell {
-  min-height: 100dvh;
-}
-
-.admin-scroll-content {
-  overscroll-behavior-y: contain;
-  -webkit-overflow-scrolling: touch;
-}
-
-.admin-mobile-nav {
-  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
-}
-
-.admin-mobile-nav__item {
-  min-height: 3.5rem;
-  touch-action: manipulation;
-}
-
-@media (max-width: 767px) {
-  .admin-topbar {
-    min-height: 3.75rem;
-    padding-top: max(0.25rem, env(safe-area-inset-top));
-  }
-
-  .admin-topbar__actions > a {
-    min-height: 2.5rem;
-    padding-inline: 0.65rem;
-  }
-
-  .admin-topbar__actions > button {
-    min-height: 2.5rem;
-    min-width: 2.5rem;
-  }
-
-  .admin-main {
-    min-height: 100dvh;
-  }
-}
-
 /* Storefront colors adapt when dark mode is selected. */
 html[data-theme='dark'] [class*="bg-white"] { background-color: #17191c !important; }
 html[data-theme='dark'] [class*="bg-[#F4F3EF]"] { background-color: #0b0b0c !important; }
@@ -332,9 +291,6 @@ html[data-theme='light'] .product-photo,
     max-inline-size: min(12rem, 60vw);
   }
 
-  .admin-scroll-content {
-    padding-inline: 0.75rem;
-  }
 }
 
 @keyframes wen-chat-details-in {
@@ -430,25 +386,5 @@ html[data-theme='dark'] .product-chat-surface .product-chat__messages {
 @media (prefers-reduced-motion: reduce) {
   .admin-product-chat__product-details {
     animation: none;
-  }
-}
-
-@media (max-width: 1023px) {
-  .admin-product-chat__workspace {
-    height: min(720px, calc(100dvh - 13.5rem));
-    min-height: min(540px, calc(100dvh - 13.5rem));
-  }
-
-  .admin-product-chat__conversation {
-    min-height: 0;
-  }
-
-  .admin-product-chat__messages {
-    padding-bottom: 1.25rem;
-    scrollbar-width: thin;
-  }
-
-  .admin-product-chat__composer {
-    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
 }

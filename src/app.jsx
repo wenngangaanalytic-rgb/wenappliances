@@ -1776,7 +1776,7 @@ const AdminLayout = ({ children }) => {
   ];
 
   return (
-    <div className="admin-app-shell motion-fade-in min-h-screen bg-[#0B0B0C] text-[#F1F1EF] flex font-sans selection:bg-[#9C6644]/30">
+    <div className="motion-fade-in min-h-screen bg-[#0B0B0C] text-[#F1F1EF] flex font-sans selection:bg-[#9C6644]/30">
       {/* Sidebar */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-[#24272A] bg-[#17191C] md:flex">
         <div className="p-6 border-b border-[#24272A]">
@@ -1823,8 +1823,8 @@ const AdminLayout = ({ children }) => {
       </aside>
 
       {/* Main Content Area */}
-      <main className="admin-main flex min-w-0 grow flex-col overflow-hidden md:h-screen">
-        <header className="admin-topbar relative z-[110] flex min-h-16 shrink-0 items-center justify-between border-b border-[#24272A] bg-[#17191C]/80 px-3 backdrop-blur-md sm:px-8">
+      <main className="flex min-w-0 grow flex-col overflow-hidden md:h-screen">
+        <header className="relative z-[110] flex min-h-16 shrink-0 items-center justify-between border-b border-[#24272A] bg-[#17191C]/80 px-4 backdrop-blur-md sm:px-8">
            <div className="flex min-w-0 items-center gap-2 text-sm text-[#858884]">
              <button type="button" onClick={() => setIsMobileNavOpen((open) => !open)} className="inline-flex shrink-0 items-center justify-center rounded-lg border border-[#4A5568]/40 bg-[#24272A] p-2 text-[#F1F1EF] hover:bg-[#30343A] md:hidden" aria-label={isMobileNavOpen ? 'Close administrator navigation' : 'Open administrator navigation'} aria-expanded={isMobileNavOpen}>
                {isMobileNavOpen ? <X className="h-4 w-4" aria-hidden="true" /> : <Menu className="h-4 w-4" aria-hidden="true" />}
@@ -1833,7 +1833,7 @@ const AdminLayout = ({ children }) => {
              <span className="hidden truncate sm:inline">Environment: Production Database</span>
              <span className="sm:hidden">Admin</span>
            </div>
-             <div className="admin-topbar__actions flex items-center gap-2 sm:gap-3">
+             <div className="flex items-center gap-3">
              <ChatNotificationBell />
              <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
              <a href={storefrontUrl} className="text-xs bg-[#24272A] hover:bg-[#1D2023] px-3 py-1.5 rounded border border-[#4A5568]/30 transition-colors">
@@ -1868,37 +1868,11 @@ const AdminLayout = ({ children }) => {
              </>
            )}
         </header>
-        <div className="admin-scroll-content min-w-0 grow overflow-y-auto p-4 pb-24 sm:p-8 sm:pb-24 md:pb-8">
+        <div className="min-w-0 grow overflow-y-auto p-4 sm:p-8">
            <div className="max-w-6xl mx-auto">
              {children}
            </div>
         </div>
-        <nav className="admin-mobile-nav fixed inset-x-0 bottom-0 z-[80] grid grid-cols-5 border-t border-[#34383D] bg-[#17191C]/95 px-2 pt-2 shadow-[0_-8px_24px_rgba(0,0,0,0.22)] backdrop-blur-xl md:hidden" aria-label="Quick administrator navigation">
-          {[...navItems.filter((item) => ['dashboard', 'products', 'orders', 'chats'].includes(item.id)), { id: 'more', label: 'More', icon: Menu }].map((item) => {
-            const path = `${adminBasePath}/${item.id}` || `/${item.id}`;
-            const adminRoot = adminBasePath ? currentRoute === adminBasePath : currentRoute === '/';
-            const active = item.id === 'more'
-              ? isMobileNavOpen
-              : currentRoute.includes(item.id) || (adminRoot && item.id === 'dashboard');
-
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => item.id === 'more' ? setIsMobileNavOpen(true) : navigate(path)}
-                className={`admin-mobile-nav__item flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold transition-colors ${active ? 'bg-[#9C6644] text-white' : 'text-[#B8BAB7] hover:bg-[#24272A] hover:text-[#F1F3EF]'}`}
-                aria-label={item.id === 'more' ? 'Open more administrator sections' : item.label}
-                aria-current={active && item.id !== 'more' ? 'page' : undefined}
-              >
-                <span className="relative">
-                  <item.icon className="h-5 w-5" aria-hidden="true" />
-                  {item.id === 'orders' && activeOrderCount > 0 && <span className="absolute -right-2 -top-2 grid h-4 min-w-4 place-items-center rounded-full bg-[#c2a792] px-1 text-[9px] font-bold text-white">{activeOrderCount > 9 ? '9+' : activeOrderCount}</span>}
-                </span>
-                <span className="max-w-full truncate">{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
       </main>
     </div>
   );

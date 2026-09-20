@@ -1,12 +1,12 @@
 const showPushNotification = (payload) => {
-  const title = payload?.title || 'Admin Wen';
+  const title = payload?.title || 'WenAppliances';
   const options = {
     body: payload?.body || 'You have a new update.',
     icon: payload?.icon || '/wen-icon.png',
     badge: payload?.badge || '/wen-icon.png',
     tag: payload?.tag || 'wenappliances-notification',
     renotify: true,
-    data: { url: payload?.url || '/dashboard' }
+    data: { url: payload?.url || '/' }
   };
 
   return self.registration.showNotification(title, options);
@@ -25,7 +25,7 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = new URL(event.notification.data?.url || '/dashboard', self.location.origin).href;
+  const targetUrl = new URL(event.notification.data?.url || '/', self.location.origin).href;
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
