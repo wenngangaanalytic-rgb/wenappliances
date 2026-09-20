@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   CheckCircle2,
   CreditCard,
@@ -38,9 +38,18 @@ const formatMoney = (amount) =>
 
 const getProductId = (item) => item.productId || item.id;
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_RE = /^[0-9+().\s-]{7,40}$/;
+
+const createRequestId = () => {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
+  throw new Error('This browser cannot create a secure checkout request.');
+};
+
 export default function Checkout({ cart = [], cartTotal = 0, clearCart, navigate, onOrderPlaced }) {
   const [formData, setFormData] = useState(initialForm);
   const [loading, setLoading] = useState(false);
+  const requestRef = useRef(null);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -71,17 +80,51 @@ export default function Checkout({ cart = [], cartTotal = 0, clearCart, navigate
       return;
     }
 
+    const name = formData.name.trim();
+    const email = formData.email.trim().toLowerCase();
+    const phone = formData.phone.trim();
+    const address = formData.address.trim();
+
+    if (name.length < 1 || name.length > 120) {
+      toast.error('Name must be between 1 and 120 characters.');
+      return;
+    }
+
+    if (email.length > 254 || !EMAIL_RE.test(email)) {
+      toast.error('Please enter a valid email address.');
+      return;
+    }
+
+    if (!PHONE_RE.test(phone)) {
+      toast.error('Please enter a valid phone number.');
+      return;
+    }
+
+    if (address.length > 500) {
+      toast.error('Delivery address must be 500 characters or fewer.');
+      return;
+    }
+
     setLoading(true);
 
     try {
+      if (!requestRef.current) {
+        requestRef.current = {
+          idempotencyKey: createRequestId(),
+          trackingToken: createRequestId()
+        };
+      }
+
       const { data, error: checkoutError } = await supabase.functions.invoke('create-order', {
+        headers: { 'Idempotency-Key': requestRef.current.idempotencyKey },
         body: {
           customer: {
-            name: formData.name.trim(),
-            email: formData.email.trim(),
-            phone: formData.phone.trim(),
-            address: formData.address.trim()
+            name,
+            email,
+            phone,
+            address
           },
+          trackingToken: requestRef.current.trackingToken,
           fulfillmentMethod: formData.fulfillmentMethod,
           paymentMethod: formData.paymentMethod,
           items: cart.map((item) => ({
@@ -101,7 +144,8 @@ export default function Checkout({ cart = [], cartTotal = 0, clearCart, navigate
 
       clearCart?.();
       toast.success(`Order placed successfully! Total: ${formatMoney(data.totalAmount)}.`);
-      onOrderPlaced?.({ orderId: data.orderId, email: formData.email.trim() });
+      onOrderPlaced?.({ orderId: data.orderId, email, trackingToken: data.trackingToken || requestRef.current.trackingToken });
+      requestRef.current = null;
       navigate?.('/track-order');
     } catch (submitError) {
       console.error('Checkout Error:', submitError);
@@ -147,17 +191,17 @@ export default function Checkout({ cart = [], cartTotal = 0, clearCart, navigate
           <div className="grid gap-5 sm:grid-cols-2">
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-[#111214]">Full name</span>
-              <input name="name" value={formData.name} onChange={handleChange} required autoComplete="name" className="w-full rounded-lg border border-[#E5E4E0] px-3 py-2.5 outline-none transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20" />
+              <input name="name" value={formData.name} onChange={handleChange} required maxLength={120} autoComplete="name" className="w-full rounded-lg border border-[#E5E4E0] px-3 py-2.5 outline-none transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20" />
             </label>
 
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-[#111214]">Email</span>
-              <input name="email" type="email" value={formData.email} onChange={handleChange} required autoComplete="email" className="w-full rounded-lg border border-[#E5E4E0] px-3 py-2.5 outline-none transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20" />
+              <input name="email" type="email" value={formData.email} onChange={handleChange} required maxLength={254} autoComplete="email" className="w-full rounded-lg border border-[#E5E4E0] px-3 py-2.5 outline-none transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20" />
             </label>
 
             <label className="block">
               <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-[#111214]"><Phone className="h-4 w-4 text-[#9C6644]" aria-hidden="true" /> Phone number</span>
-              <input name="phone" type="tel" value={formData.phone} onChange={handleChange} required autoComplete="tel" className="w-full rounded-lg border border-[#E5E4E0] px-3 py-2.5 outline-none transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20" />
+              <input name="phone" type="tel" value={formData.phone} onChange={handleChange} required maxLength={40} pattern="[0-9+().\\s-]{7,40}" autoComplete="tel" className="w-full rounded-lg border border-[#E5E4E0] px-3 py-2.5 outline-none transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20" />
             </label>
 
             <fieldset className="sm:col-span-2">
@@ -178,7 +222,7 @@ export default function Checkout({ cart = [], cartTotal = 0, clearCart, navigate
             {formData.fulfillmentMethod === 'DELIVERY' && (
               <label className="block sm:col-span-2">
                 <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-[#111214]"><MapPin className="h-4 w-4 text-[#9C6644]" aria-hidden="true" /> Delivery address</span>
-                <textarea name="address" value={formData.address} onChange={handleChange} required rows={4} autoComplete="street-address" placeholder="Where should we deliver your appliance?" className="w-full resize-y rounded-lg border border-[#E5E4E0] px-3 py-2.5 outline-none transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20" />
+                <textarea name="address" value={formData.address} onChange={handleChange} required maxLength={500} rows={4} autoComplete="street-address" placeholder="Where should we deliver your appliance?" className="w-full resize-y rounded-lg border border-[#E5E4E0] px-3 py-2.5 outline-none transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20" />
               </label>
             )}
 

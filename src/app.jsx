@@ -545,13 +545,13 @@ export default function App() {
         {currentRoute === '/' && <StoreHome />}
         {currentRoute === '/products' && <LiveApplianceCatalog onProductClick={(productId) => navigate(`/product/${productId}`)} />}
         {currentRoute.startsWith('/product/') && <StoreProductDetail id={currentRoute.split('/')[2]} />}
-        {currentRoute === '/checkout' && <Checkout cart={cart} cartTotal={cartTotal} clearCart={clearCart} navigate={navigate} onOrderPlaced={({ orderId, email }) => {
-          rememberOrderForNotifications(orderId, email);
-          setTrackingPrefill({ orderId, email });
+        {currentRoute === '/checkout' && <Checkout cart={cart} cartTotal={cartTotal} clearCart={clearCart} navigate={navigate} onOrderPlaced={({ orderId, email, trackingToken }) => {
+          rememberOrderForNotifications(orderId, email, trackingToken);
+          setTrackingPrefill({ orderId, email, trackingToken });
         }} />}
         {currentRoute === '/reset-password' && <ResetPassword navigate={navigate} />}
         {currentRoute === '/my-orders' && <OrderTracking initialValues={{ email: user?.email || '' }} accountMode />}
-        {currentRoute.startsWith('/track-order') && <OrderTracking initialValues={{ email: trackingPrefill?.email || user?.email || '' }} />}
+        {currentRoute.startsWith('/track-order') && <OrderTracking initialValues={{ email: trackingPrefill?.email || user?.email || '', trackingToken: trackingPrefill?.trackingToken || '' }} />}
       </StoreLayout>
     );
   };
@@ -807,7 +807,7 @@ const StoreLayout = ({ children }) => {
             <div className="mb-4 block text-left" aria-label="WenAppliances">
               <Logo dark={true} />
             </div>
-            <p className="text-[#B8BAB7] text-sm leading-relaxed">Premium electronics and appliances for the modern lifestyle. Quality assured.</p>
+            <p className="text-[#B8BAB7] text-sm leading-relaxed">Shop refrigerators, washers, dryers, and household appliances with clear pricing, delivery options, and direct support.</p>
           </div>
           <div>
             <h3 className="font-semibold mb-4 text-[#F1F1EF]">Shop</h3>
@@ -991,9 +991,9 @@ const StoreHome = () => {
         </div>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 md:py-32 relative z-10">
           <div className="max-w-xl">
-            <span className="text-[#9C6644] font-bold tracking-wider text-sm uppercase mb-4 block">Premium Home Appliances</span>
-            <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-6 leading-tight">Elevate Your Living Space.</h2>
-            <p className="text-lg text-[#B8BAB7] mb-8 leading-relaxed">Discover our curated selection of high-performance refrigerators, washers, and dryers. Engineered for reliability, designed for elegance.</p>
+            <span className="text-[#9C6644] font-bold tracking-wider text-sm uppercase mb-4 block">Appliances in stock today</span>
+            <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-6 leading-tight">Reliable appliances, ready for your home.</h2>
+            <p className="text-lg text-[#B8BAB7] mb-8 leading-relaxed">Shop refrigerators, washers, dryers, and more with clear pricing, delivery options, and support from WenAppliances.</p>
             <button 
               onClick={() => navigate('/products')}
               className="bg-[#9C6644] hover:bg-[#8A5A3C] text-white px-8 py-3 rounded-lg font-medium transition-colors shadow-lg"
@@ -1008,8 +1008,8 @@ const StoreHome = () => {
       <section className="motion-fade-up max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="flex justify-between items-end mb-8">
           <div>
-            <h3 className="text-2xl font-bold tracking-tight">Featured Products</h3>
-            <p className="text-[#4A5568] mt-1 text-sm">Handpicked premium tech.</p>
+            <h3 className="text-2xl font-bold tracking-tight">Current appliance stock</h3>
+            <p className="text-[#4A5568] mt-1 text-sm">Browse available appliances and recently added products.</p>
           </div>
           <button onClick={() => navigate('/products')} className="text-[#9C6644] font-medium text-sm flex items-center hover:underline">
             View All <ChevronRight className="h-4 w-4 ml-1" />

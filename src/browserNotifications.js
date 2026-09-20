@@ -271,15 +271,16 @@ export const clearNativeChatNotifications = async ({ threadKey } = {}) => {
   }
 };
 
-export const rememberOrderForNotifications = (orderId, email) => {
+export const rememberOrderForNotifications = (orderId, email, trackingToken) => {
   const normalizedId = String(orderId || '').trim();
   const normalizedEmail = String(email || '').trim().toLowerCase();
-  if (!normalizedId || !normalizedEmail || typeof window === 'undefined') return;
+  const normalizedToken = String(trackingToken || '').trim();
+  if (!normalizedId || !normalizedToken || typeof window === 'undefined') return;
 
   try {
     const existing = getTrackedOrders();
     const next = [
-      { id: normalizedId, email: normalizedEmail },
+      { id: normalizedId, email: normalizedEmail, trackingToken: normalizedToken },
       ...existing.filter((order) => order.id !== normalizedId)
     ].slice(0, 20);
     window.localStorage.setItem(TRACKED_ORDERS_KEY, JSON.stringify(next));
@@ -294,9 +295,10 @@ export const getTrackedOrders = () => {
   try {
     const parsed = JSON.parse(window.localStorage.getItem(TRACKED_ORDERS_KEY) || '[]');
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((order) => order?.id && order?.email).map((order) => ({
+    return parsed.filter((order) => order?.id && order?.trackingToken).map((order) => ({
       id: String(order.id),
-      email: String(order.email).trim().toLowerCase()
+      email: String(order.email || '').trim().toLowerCase(),
+      trackingToken: String(order.trackingToken).trim()
     }));
   } catch {
     return [];

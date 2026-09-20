@@ -6,6 +6,7 @@ import {
   Clock3,
   Download,
   FileText,
+  Lock,
   Mail,
   MapPin,
   PackageCheck,
@@ -57,7 +58,7 @@ const getFunctionErrorMessage = async (error) => {
     }
   }
 
-  return error?.message || 'We could not find purchases for that email.';
+  return error?.message || 'We could not find purchases for that tracking request.';
 };
 
 const normalizeStatus = (status) => {
@@ -269,6 +270,7 @@ function OrderCard({ order, onCancel, cancelling, expanded, onToggle }) {
 export default function OrderTracking({ initialValues = null, accountMode = false }) {
   const [formData, setFormData] = useState({
     email: initialValues?.email || '',
+    trackingToken: initialValues?.trackingToken || '',
     productName: ''
   });
   const [orders, setOrders] = useState([]);
@@ -280,9 +282,10 @@ export default function OrderTracking({ initialValues = null, accountMode = fals
 
   const lookupPurchases = useCallback(async (values, { silent = false } = {}) => {
     const email = values.email.trim().toLowerCase();
+    const trackingToken = values.trackingToken.trim();
 
-    if (!email) {
-      setError('Enter the email address used when purchasing.');
+    if (!trackingToken && !email) {
+      setError(accountMode ? 'Sign in to view your member purchases.' : 'Enter the private tracking token from checkout.');
       setOrders([]);
       return;
     }
@@ -294,7 +297,7 @@ export default function OrderTracking({ initialValues = null, accountMode = fals
 
     try {
       const { data, error: functionError } = await supabase.functions.invoke('track-order', {
-        body: { email }
+        body: trackingToken ? { trackingToken } : { email }
       });
 
       if (functionError) throw new Error(await getFunctionErrorMessage(functionError));
@@ -303,26 +306,27 @@ export default function OrderTracking({ initialValues = null, accountMode = fals
       console.error('Purchase lookup error:', lookupError);
       if (!silent) {
         setOrders([]);
-        setError(lookupError.message || 'We could not find purchases for that email.');
+        setError(lookupError.message || 'We could not find purchases for that tracking request.');
       }
     } finally {
       if (!silent) setLoading(false);
     }
-  }, []);
+  }, [accountMode]);
 
   const initialEmail = initialValues?.email?.trim() || '';
+  const initialTrackingToken = initialValues?.trackingToken?.trim() || '';
 
   useEffect(() => {
-    if (autoLookupStarted.current || !initialEmail) return;
+    if (autoLookupStarted.current || (!initialEmail && !initialTrackingToken)) return;
 
     autoLookupStarted.current = true;
-    setFormData((current) => ({ ...current, email: initialEmail }));
-    lookupPurchases({ email: initialEmail });
-  }, [initialEmail, lookupPurchases]);
+    setFormData((current) => ({ ...current, email: initialEmail, trackingToken: initialTrackingToken }));
+    lookupPurchases({ email: initialEmail, trackingToken: initialTrackingToken });
+  }, [initialEmail, initialTrackingToken, lookupPurchases]);
 
   useEffect(() => {
     const email = formData.email.trim().toLowerCase();
-    if (!email) return undefined;
+    if (!email || !accountMode) return undefined;
 
     let active = true;
 
@@ -363,7 +367,7 @@ export default function OrderTracking({ initialValues = null, accountMode = fals
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       supabase.removeChannel(ordersChannel);
     };
-  }, [formData.email, lookupPurchases]);
+  }, [accountMode, formData.email, lookupPurchases]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -383,7 +387,12 @@ export default function OrderTracking({ initialValues = null, accountMode = fals
 
     try {
       const { data, error: cancelError } = await supabase.functions.invoke('cancel-order', {
-        body: { email: formData.email.trim(), orderId }
+        body: {
+          orderId,
+          ...(formData.trackingToken.trim()
+            ? { trackingToken: formData.trackingToken.trim() }
+            : { email: formData.email.trim() })
+        }
       });
 
       if (cancelError) throw new Error(await getFunctionErrorMessage(cancelError));
@@ -425,19 +434,24 @@ export default function OrderTracking({ initialValues = null, accountMode = fals
       <div className="max-w-3xl">
         <p className="text-sm font-semibold uppercase tracking-wider text-[#9C6644]">Your account purchases</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#111214]">{accountMode ? 'My orders' : 'Find a product you ordered'}</h1>
-        <p className="mt-3 text-[#4A5568]">{accountMode ? 'View your purchases, search by product name, and cancel an order while it is still pending.' : 'Use the same email from checkout. Your purchases will stay available here, and you can search them by product name.'}</p>
+        <p className="mt-3 text-[#4A5568]">{accountMode ? 'View your purchases, search by product name, and cancel an order while it is still pending.' : 'Use the private tracking token provided after checkout. It protects your purchase details and lets you follow one order securely.'}</p>
       </div>
 
       <form onSubmit={handleSubmit} className="mt-8 grid gap-4 rounded-2xl border border-[#E5E4E0] bg-white p-5 shadow-sm md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end md:p-6">
-        {accountMode && initialEmail ? (
+        {initialEmail && !initialTrackingToken ? (
           <div className="rounded-lg border border-[#E5E4E0] bg-[#F4F3EF] px-3 py-2.5">
             <span className="flex items-center gap-2 text-sm font-semibold text-[#111214]"><Mail className="h-4 w-4 text-[#9C6644]" aria-hidden="true" /> Member purchase email</span>
             <p className="mt-1 break-all text-sm text-[#4A5568]">Signed in as {initialEmail}</p>
           </div>
-        ) : (
+        ) : accountMode ? (
           <label className="block">
             <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-[#111214]"><Mail className="h-4 w-4 text-[#9C6644]" aria-hidden="true" /> Purchase email</span>
             <input name="email" type="email" value={formData.email} onChange={handleChange} placeholder="you@example.com" autoComplete="email" required className="w-full rounded-lg border border-[#E5E4E0] px-3 py-2.5 text-sm outline-none transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20" />
+          </label>
+        ) : (
+          <label className="block">
+            <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-[#111214]"><Lock className="h-4 w-4 text-[#9C6644]" aria-hidden="true" /> Private tracking token</span>
+            <input name="trackingToken" value={formData.trackingToken} onChange={handleChange} placeholder="Paste the token from checkout" autoComplete="off" required className="w-full rounded-lg border border-[#E5E4E0] px-3 py-2.5 text-sm outline-none transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20" />
           </label>
         )}
 

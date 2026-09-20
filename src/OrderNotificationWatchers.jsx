@@ -112,20 +112,23 @@ export function CustomerOrderNotificationWatcher({ user, refreshKey = '' }) {
     let active = true;
     const trackedOrders = getTrackedOrders();
     const trackedOrderIds = new Set(trackedOrders.map((order) => order.id));
-    const emails = [...new Set([
-      ...trackedOrders.map((order) => order.email),
-      user?.email?.trim().toLowerCase()
-    ].filter(Boolean))];
+    const trackingTokens = [...new Set(trackedOrders.map((order) => order.trackingToken).filter(Boolean))];
+    const memberEmail = user?.email?.trim().toLowerCase() || '';
 
-    if (emails.length === 0 || trackedOrderIds.size === 0) {
+    if ((trackingTokens.length === 0 && !memberEmail) || trackedOrderIds.size === 0) {
       statusByOrderId.current = new Map();
       initialized.current = false;
       return undefined;
     }
 
     const checkOrderStatuses = async () => {
-      for (const email of emails) {
-        const { data, error } = await supabase.functions.invoke('track-order', { body: { email } });
+      const requests = [
+        ...trackingTokens.map((trackingToken) => ({ trackingToken })),
+        ...(memberEmail ? [{ email: memberEmail }] : [])
+      ];
+
+      for (const body of requests) {
+        const { data, error } = await supabase.functions.invoke('track-order', { body });
         if (!active || error || !Array.isArray(data?.orders)) continue;
 
         data.orders

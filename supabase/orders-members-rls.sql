@@ -10,12 +10,20 @@ alter table public.orders add column if not exists delivery_address text;
 alter table public.orders add column if not exists customer_phone text;
 alter table public.orders add column if not exists fulfillment_method text not null default 'DELIVERY';
 alter table public.orders add column if not exists cancellation_reason text;
+alter table public.orders add column if not exists tracking_token_hash text;
+alter table public.orders add column if not exists idempotency_key uuid;
 alter table public.orders drop constraint if exists orders_fulfillment_method_check;
 alter table public.orders
   add constraint orders_fulfillment_method_check
   check (fulfillment_method in ('DELIVERY', 'DOOR_PICKUP'));
 create index if not exists orders_customer_email_created_at_idx
   on public.orders (customer_email, created_at desc);
+create unique index if not exists orders_tracking_token_hash_uidx
+  on public.orders (tracking_token_hash)
+  where tracking_token_hash is not null;
+create unique index if not exists orders_idempotency_key_uidx
+  on public.orders (idempotency_key)
+  where idempotency_key is not null;
 alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
 
@@ -106,10 +114,31 @@ declare
   delivery_address_value text := trim(coalesce(order_payload ->> 'delivery_address', ''));
   fulfillment_method_value text := upper(trim(coalesce(order_payload ->> 'fulfillment_method', '')));
   payment_method_value text := trim(coalesce(order_payload ->> 'payment_method', ''));
+  tracking_token_hash_value text := nullif(trim(coalesce(order_payload ->> 'tracking_token_hash', '')), '');
+  idempotency_key_value uuid := nullif(trim(coalesce(order_payload ->> 'idempotency_key', '')), '')::uuid;
+  existing_order public.orders%rowtype;
   item_record record;
   product_record record;
   order_total numeric := 0;
 begin
+  if tracking_token_hash_value is null or tracking_token_hash_value !~ '^[0-9a-f]{64}$' then
+    raise exception using errcode = 'P0001', message = 'A secure tracking token is required.';
+  end if;
+
+  if idempotency_key_value is not null then
+    select * into existing_order
+    from public.orders
+    where idempotency_key = idempotency_key_value
+    for update;
+
+    if found then
+      return jsonb_build_object(
+        'orderId', existing_order.id,
+        'totalAmount', coalesce(existing_order.total_amount, 0)
+      );
+    end if;
+  end if;
+
   if customer_name_value = '' or length(customer_name_value) > 120 then
     raise exception using errcode = 'P0001', message = 'Please provide a valid customer name.';
   end if;
@@ -118,7 +147,7 @@ begin
     raise exception using errcode = 'P0001', message = 'Please provide a valid customer email.';
   end if;
 
-  if customer_phone_value = '' or length(customer_phone_value) > 40 then
+  if customer_phone_value !~ '^[0-9+().[:space:]-]{7,40}$' then
     raise exception using errcode = 'P0001', message = 'Please provide a valid phone number.';
   end if;
 
@@ -146,10 +175,12 @@ begin
 
   insert into public.orders (
     id, customer_name, customer_email, customer_phone,
-    delivery_address, fulfillment_method, total_amount, payment_method, status
+    delivery_address, fulfillment_method, total_amount, payment_method, status,
+    tracking_token_hash, idempotency_key
   ) values (
     new_order_id, customer_name_value, customer_email_value, customer_phone_value,
-    delivery_address_value, fulfillment_method_value, 0, payment_method_value, 'Pending'
+    delivery_address_value, fulfillment_method_value, 0, payment_method_value, 'Pending',
+    tracking_token_hash_value, idempotency_key_value
   );
 
   for item_record in
@@ -209,7 +240,7 @@ create or replace function public.cancel_order_atomic(
 )
 returns jsonb
 language plpgsql
-security definer
+security invoker
 set search_path = public, pg_temp
 as $$
 declare
@@ -346,3 +377,62 @@ from auth.users
 on conflict (id) do update
   set email = excluded.email,
       full_name = coalesce(excluded.full_name, public.members.full_name);
+
+-- Server-only rate-limit state used by the public order Edge Functions.
+create table if not exists public.api_rate_limits (
+  key text primary key,
+  window_started_at timestamptz not null default now(),
+  request_count integer not null default 0 check (request_count >= 0)
+);
+
+revoke all on table public.api_rate_limits from public, anon, authenticated;
+
+create or replace function public.consume_api_rate_limit(
+  p_key text,
+  p_limit integer,
+  p_window_seconds integer
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  rate_record public.api_rate_limits%rowtype;
+begin
+  if p_key is null or length(trim(p_key)) = 0
+     or p_limit < 1 or p_window_seconds < 1 then
+    return false;
+  end if;
+
+  select * into rate_record
+  from public.api_rate_limits
+  where key = p_key
+  for update;
+
+  if not found then
+    insert into public.api_rate_limits (key, window_started_at, request_count)
+    values (p_key, now(), 1);
+    return true;
+  end if;
+
+  if now() >= rate_record.window_started_at + make_interval(secs => p_window_seconds) then
+    update public.api_rate_limits
+    set window_started_at = now(), request_count = 1
+    where key = p_key;
+    return true;
+  end if;
+
+  if rate_record.request_count >= p_limit then
+    return false;
+  end if;
+
+  update public.api_rate_limits
+  set request_count = request_count + 1
+  where key = p_key;
+  return true;
+end;
+$$;
+
+revoke all on function public.consume_api_rate_limit(text, integer, integer) from public, anon, authenticated;
+grant execute on function public.consume_api_rate_limit(text, integer, integer) to service_role;
