@@ -10,3 +10,4 @@ android/.gradle/
 android/**/build/
 android/release-signing.properties
 android/keystores/
+android/app/google-services.json

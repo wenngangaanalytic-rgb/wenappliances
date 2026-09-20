@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { LoaderCircle, MessageCircle, Send, X } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { chatSupabase } from './supabaseClient';
+import { chatSupabase, supabase } from './supabaseClient';
 import { ensureChatIdentity, getChatSessionId } from './chatSession';
 import { emitChatActivity } from './chatActivity';
 
@@ -26,7 +26,9 @@ const formatDateHeading = (value) => {
   return new Date(value).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
 };
 
-export default function ProductChatWidget({ productId, productName, inlineTrigger = false }) {
+const MESSAGE_COLUMNS = 'id, created_at, sender_role, content, session_id, product_id, product_name, is_read, owner_id, sender_id, chat_id, customer_id';
+
+export default function ProductChatWidget({ productId, productName, inlineTrigger = false, user = null }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [messageDraft, setMessageDraft] = useState('');
@@ -44,6 +46,7 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
   const typingActiveRef = useRef(false);
   const typingStopTimeoutRef = useRef(null);
   const incomingTypingTimeoutRef = useRef(null);
+  const chatClientRef = useRef(chatSupabase);
 
   useEffect(() => {
     isOpenRef.current = isOpen;
@@ -101,14 +104,19 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
 
     const loadProductChat = async () => {
       try {
-        const chatUser = await ensureChatIdentity();
+        // Registered customers use their real Auth identity so the server can
+        // route admin replies to their FCM token. Guests retain the isolated
+        // anonymous chat identity used by the existing storefront flow.
+        const client = user?.id ? supabase : chatSupabase;
+        const chatUser = user?.id ? { id: user.id } : await ensureChatIdentity();
+        chatClientRef.current = client;
         if (cancelled) return;
 
         setOwnerId(chatUser.id);
 
-        const { data, error: fetchError } = await chatSupabase
+        const { data, error: fetchError } = await client
           .from('messages')
-          .select('id, created_at, sender_role, content, session_id, product_id, product_name, is_read, owner_id')
+          .select(MESSAGE_COLUMNS)
           .eq('session_id', currentSessionId)
           .eq('product_id', currentProductId)
           .eq('owner_id', chatUser.id)
@@ -119,7 +127,7 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
 
         setMessages(data ?? []);
 
-        channel = chatSupabase
+        channel = client
           .channel(`product-chat-${currentSessionId}-${currentProductId}`)
           .on('broadcast', { event: 'typing' }, ({ payload }) => {
             if (payload?.sender_role !== 'admin') return;
@@ -152,7 +160,7 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
 
               if (incomingMessage.sender_role === 'admin') {
                 if (isOpenRef.current) {
-                  void chatSupabase
+                  void client
                     .from('messages')
                     .update({ is_read: true })
                     .eq('id', incomingMessage.id)
@@ -184,16 +192,16 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
       if (incomingTypingTimeoutRef.current) clearTimeout(incomingTypingTimeoutRef.current);
       typingActiveRef.current = false;
       if (realtimeChannelRef.current === channel) realtimeChannelRef.current = null;
-      if (channel) void chatSupabase.removeChannel(channel);
+      if (channel) void chatClientRef.current.removeChannel(channel);
     };
-  }, [productId]);
+  }, [productId, user?.id]);
 
   useEffect(() => {
     if (!isOpen || !sessionId || !ownerId || !productId) return undefined;
 
     let cancelled = false;
     const markAdminMessagesRead = async () => {
-      const { error: updateError } = await chatSupabase
+      const { error: updateError } = await chatClientRef.current
         .from('messages')
         .update({ is_read: true })
         .eq('session_id', sessionId)
@@ -253,7 +261,7 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
     broadcastTyping(false);
     setIsSending(true);
     try {
-      const { data, error: insertError } = await chatSupabase
+      const { data, error: insertError } = await chatClientRef.current
         .from('messages')
         .insert({
           sender_role: 'customer',
@@ -262,9 +270,12 @@ export default function ProductChatWidget({ productId, productName, inlineTrigge
           product_id: String(productId),
           product_name: String(productName || 'This product').trim().slice(0, 200),
           is_read: false,
-          owner_id: ownerId
+          owner_id: ownerId,
+          sender_id: ownerId,
+          chat_id: `${sessionId}::${String(productId)}`,
+          customer_id: user?.id || null
         })
-        .select('id, created_at, sender_role, content, session_id, product_id, product_name, is_read, owner_id')
+        .select(MESSAGE_COLUMNS)
         .single();
 
       if (insertError) throw insertError;

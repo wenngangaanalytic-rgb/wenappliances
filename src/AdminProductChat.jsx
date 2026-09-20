@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { supabase } from './supabaseClient';
 import { emitChatActivity } from './chatActivity';
 
-const MESSAGE_COLUMNS = 'id, created_at, sender_role, content, session_id, product_id, product_name, is_read, owner_id';
+const MESSAGE_COLUMNS = 'id, created_at, sender_role, content, session_id, product_id, product_name, is_read, owner_id, sender_id, chat_id, customer_id';
 const MAX_MESSAGE_LENGTH = 2000;
 
 const getThreadKey = (message) => `${message.session_id}::${message.product_id}`;
@@ -25,6 +25,8 @@ const makeThread = (messages) => {
     productId: firstMessage.product_id,
     productName: latestMessage.product_name || firstMessage.product_name || 'Unnamed product',
     ownerId: latestMessage.owner_id || firstMessage.owner_id,
+    customerId: latestMessage.customer_id || firstMessage.customer_id || '',
+    chatId: latestMessage.chat_id || firstMessage.chat_id || `${firstMessage.session_id}::${firstMessage.product_id}`,
     messages: orderedMessages,
     unreadCount: orderedMessages.filter((message) => message.sender_role === 'customer' && !message.is_read).length,
     lastMessageAt: latestMessage.created_at
@@ -55,6 +57,8 @@ const appendToThread = (thread, message, markRead = false) => {
     ...thread,
     productName: nextMessage.product_name || thread.productName,
     ownerId: nextMessage.owner_id || thread.ownerId,
+    customerId: nextMessage.customer_id || thread.customerId,
+    chatId: nextMessage.chat_id || thread.chatId,
     messages,
     unreadCount: messages.filter((currentMessage) => currentMessage.sender_role === 'customer' && !currentMessage.is_read).length,
     lastMessageAt: messages[messages.length - 1].created_at
@@ -341,6 +345,9 @@ export default function AdminProductChat() {
     broadcastTyping(false);
     setIsSending(true);
     try {
+      const { data: authUserData, error: authUserError } = await supabase.auth.getUser();
+      if (authUserError || !authUserData?.user?.id) throw authUserError || new Error('Administrator authentication is required.');
+
       const { data, error: insertError } = await supabase
         .from('messages')
         .insert({
@@ -350,7 +357,10 @@ export default function AdminProductChat() {
           product_id: activeThread.productId,
           product_name: activeThread.productName,
           is_read: false,
-          owner_id: activeThread.ownerId
+          owner_id: activeThread.ownerId,
+          sender_id: authUserData.user.id,
+          chat_id: activeThread.chatId,
+          customer_id: activeThread.customerId || null
         })
         .select(MESSAGE_COLUMNS)
         .single();

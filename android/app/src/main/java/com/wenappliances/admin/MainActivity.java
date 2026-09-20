@@ -21,7 +21,7 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
     private static final int APP_PERMISSIONS_REQUEST_CODE = 4101;
-    private static final String NATIVE_CHANNEL_ID = "wenappliances-alerts-v2";
+    private static final String NATIVE_CHANNEL_ID = "chat_messages";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {

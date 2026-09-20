@@ -25,6 +25,7 @@ import PresenceTracker from './PresenceTracker';
 import OrderNotificationPrompt from './OrderNotificationPrompt';
 import { AdminOrderNotificationWatcher, CustomerOrderNotificationWatcher } from './OrderNotificationWatchers';
 import { rememberOrderForNotifications } from './browserNotifications';
+import PushNotificationRegistration from './PushNotificationRegistration';
 import { SUPPORT_EMAIL, SUPPORT_PHONE } from './businessInfo';
 import SEO, { STOREFRONT_DEFAULT_IMAGE, STOREFRONT_SITE_URL } from './SEO.jsx';
 import {
@@ -683,8 +684,9 @@ export default function App() {
   };
 
   return (
-    <ChatNotificationProvider isAdmin={isAdminApp} active={!isAdminApp || user?.role === 'SUPER_ADMIN'}>
+    <ChatNotificationProvider isAdmin={isAdminApp} user={user} active={!isAdminApp || user?.role === 'SUPER_ADMIN'}>
       <AppContext.Provider value={contextValue}>
+        <PushNotificationRegistration user={user} active={!isAdminApp || user?.role === 'SUPER_ADMIN'} />
         <RouteSeo currentRoute={currentRoute} products={products} />
         <div className="min-h-screen font-sans bg-[#F4F3EF] text-[#111214] antialiased">
           {renderRoute()}
@@ -1309,7 +1311,7 @@ const StoreCatalog = () => {
 };
 
 const StoreProductDetail = ({ id }) => {
-  const { products, addToCart } = useContext(AppContext);
+  const { products, addToCart, user } = useContext(AppContext);
   const product = products.find(p => p.id === id);
   const [qty, setQty] = useState(1);
   const [imgIndex, setImgIndex] = useState(0);
@@ -1536,7 +1538,7 @@ const StoreProductDetail = ({ id }) => {
                 </button>
                 </div>
               </div>
-              <ProductChatWidget productId={product.id} productName={product.name} inlineTrigger />
+              <ProductChatWidget productId={product.id} productName={product.name} user={user} inlineTrigger />
             </div>
             
             <button 

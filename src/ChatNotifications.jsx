@@ -12,7 +12,7 @@ import {
   showChatNotification
 } from './browserNotifications';
 
-const MESSAGE_COLUMNS = 'id, created_at, sender_role, content, session_id, product_id, product_name, is_read, owner_id';
+const MESSAGE_COLUMNS = 'id, created_at, sender_role, content, session_id, product_id, product_name, is_read, owner_id, sender_id, chat_id, customer_id';
 const MAX_NOTIFICATION_ITEMS = 30;
 
 const getThreadKey = (message) => `${message.session_id}::${message.product_id}`;
@@ -60,7 +60,7 @@ const buildNotifications = (rows, isAdmin) => {
 
 const ChatNotificationContext = createContext(null);
 
-export function ChatNotificationProvider({ isAdmin = false, active = true, children }) {
+export function ChatNotificationProvider({ isAdmin = false, active = true, user = null, children }) {
   const [notifications, setNotifications] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const [permission, setPermission] = useState(getNotificationPermission);
@@ -109,7 +109,7 @@ export function ChatNotificationProvider({ isAdmin = false, active = true, child
     }
 
     let cancelled = false;
-    const client = isAdmin ? supabase : chatSupabase;
+    const client = isAdmin || user?.id ? supabase : chatSupabase;
     const inboundRole = isAdmin ? 'customer' : 'admin';
     let ownerId = '';
 
@@ -142,7 +142,9 @@ export function ChatNotificationProvider({ isAdmin = false, active = true, child
     };
 
     const start = async () => {
-      if (!isAdmin) {
+      if (!isAdmin && user?.id) {
+        ownerId = user.id;
+      } else if (!isAdmin) {
         ownerId = (await ensureChatIdentity()).id;
         if (cancelled) return;
       }
@@ -254,7 +256,7 @@ export function ChatNotificationProvider({ isAdmin = false, active = true, child
       cancelled = true;
       if (channel) client.removeChannel(channel);
     };
-  }, [active, isAdmin]);
+  }, [active, isAdmin, user?.id]);
 
   const value = useMemo(() => ({
     isAdmin,

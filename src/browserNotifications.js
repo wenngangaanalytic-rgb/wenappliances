@@ -3,9 +3,9 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 
 const TRACKED_ORDERS_KEY = 'wenappliances:notification-orders';
 const NATIVE_PERMISSION_KEY = 'wenappliances:native-notification-permission';
-// Keep a versioned channel so devices that previously created a misconfigured
-// channel receive the corrected sound/vibration defaults.
-const NATIVE_CHANNEL_ID = 'wenappliances-alerts-v2';
+// Keep the native and FCM channels aligned so foreground and background chat
+// alerts use the same sound, vibration, and Android notification settings.
+const NATIVE_CHANNEL_ID = 'chat_messages';
 
 const isNativeApp = () => Capacitor.isNativePlatform();
 
