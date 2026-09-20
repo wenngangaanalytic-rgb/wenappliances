@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const siteUrl = (process.env.SITE_URL || 'https://wenappliances.net').replace(/\/$/, '');
+const siteUrl = (process.env.SITE_URL || 'https://wenappliances.vercel.app').replace(/\/$/, '');
 const supabaseUrl = String(process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
 const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 

@@ -37,4 +37,9 @@ if (isAdminProject) {
   for (const entry of readdirSync(adminOutput)) {
     cpSync(join(adminOutput, entry), join(rootOutput, entry), { recursive: true, force: true });
   }
+
+  // The admin Vercel project uses the repository's shared vercel.json. Replace
+  // the storefront crawler file in the copied output so Admin Wen stays out
+  // of search engines even when its project config is not selected explicitly.
+  cpSync(join(rootOutput, 'admin-robots.txt'), join(rootOutput, 'robots.txt'), { force: true });
 }

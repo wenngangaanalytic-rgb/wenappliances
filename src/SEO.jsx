@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-export const STOREFRONT_SITE_URL = 'https://wenappliances.net';
+export const STOREFRONT_SITE_URL = 'https://wenappliances.vercel.app';
 export const STOREFRONT_DEFAULT_IMAGE = `${STOREFRONT_SITE_URL}/wen-icon.png`;
 
 const upsertMeta = (attribute, key, content) => {

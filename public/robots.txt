@@ -6,4 +6,4 @@ Disallow: /track-order
 Disallow: /reset-password
 Disallow: /hq-operations
 
-Sitemap: https://wenappliances.net/sitemap.xml
+Sitemap: https://wenappliances.vercel.app/sitemap.xml
