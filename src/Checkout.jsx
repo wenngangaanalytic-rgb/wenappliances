@@ -46,6 +46,21 @@ const createRequestId = () => {
   throw new Error('This browser cannot create a secure checkout request.');
 };
 
+const getCheckoutErrorMessage = async (error) => {
+  const response = error?.context;
+
+  if (response && typeof response.clone === 'function') {
+    try {
+      const payload = await response.clone().json();
+      if (typeof payload?.error === 'string' && payload.error.trim()) return payload.error.trim();
+    } catch {
+      // Keep the SDK message when the Edge Function did not return JSON.
+    }
+  }
+
+  return error?.message || 'Failed to place the order.';
+};
+
 export default function Checkout({ cart = [], cartTotal = 0, clearCart, navigate, onOrderPlaced }) {
   const [formData, setFormData] = useState(initialForm);
   const [loading, setLoading] = useState(false);
@@ -136,7 +151,7 @@ export default function Checkout({ cart = [], cartTotal = 0, clearCart, navigate
 
       if (checkoutError) {
         console.error('Secure Checkout Error:', checkoutError);
-        toast.error(checkoutError.message || 'Failed to place order');
+        toast.error(await getCheckoutErrorMessage(checkoutError));
         return;
       }
 
@@ -149,7 +164,7 @@ export default function Checkout({ cart = [], cartTotal = 0, clearCart, navigate
       navigate?.('/track-order');
     } catch (submitError) {
       console.error('Checkout Error:', submitError);
-      toast.error(submitError.message || 'Failed to place order');
+      toast.error(await getCheckoutErrorMessage(submitError));
     } finally {
       setLoading(false);
     }
