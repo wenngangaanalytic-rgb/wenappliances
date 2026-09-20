@@ -26,6 +26,7 @@ import OrderNotificationPrompt from './OrderNotificationPrompt';
 import { AdminOrderNotificationWatcher, CustomerOrderNotificationWatcher } from './OrderNotificationWatchers';
 import { rememberOrderForNotifications } from './browserNotifications';
 import { SUPPORT_EMAIL, SUPPORT_PHONE } from './businessInfo';
+import SEO, { STOREFRONT_DEFAULT_IMAGE, STOREFRONT_SITE_URL } from './SEO.jsx';
 import {
   ADMIN_PORTAL_ROLE_MESSAGE,
   CUSTOMER_PORTAL_ADMIN_MESSAGE,
@@ -193,6 +194,131 @@ const getRouteFromLocation = () => {
   } catch {
     return '/';
   }
+};
+
+const getSeoDescription = (value, fallback) => {
+  const plainText = String(value || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!plainText) return fallback;
+  return plainText.length > 155 ? `${plainText.slice(0, 152).trimEnd()}...` : plainText;
+};
+
+const getSeoImageUrl = (value) => {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value.startsWith('/')) return `${STOREFRONT_SITE_URL}${value}`;
+  return null;
+};
+
+const RouteSeo = ({ currentRoute, products }) => {
+  const adminSiteUrl = typeof window !== 'undefined' ? window.location.origin : STOREFRONT_SITE_URL;
+
+  if (isAdminApp) {
+    return (
+      <SEO
+        title="Admin Wen | Administration portal"
+        description="Secure administration portal for managing WenAppliances inventory, orders, members, and support conversations."
+        canonicalPath={typeof window !== 'undefined' ? window.location.pathname : '/'}
+        siteUrl={adminSiteUrl}
+        robots="noindex, nofollow"
+        image={`${adminSiteUrl}/admin-wen-logo.svg`}
+      />
+    );
+  }
+
+  if (currentRoute === '/') {
+    return (
+      <SEO
+        title="WenAppliances | Appliances for your home"
+        description="Shop refrigerators, washers, dryers, and other home appliances from WenAppliances with clear pricing, delivery options, and customer support."
+        canonicalPath="/"
+      />
+    );
+  }
+
+  if (currentRoute === '/products') {
+    return (
+      <SEO
+        title="Shop Appliances | WenAppliances"
+        description="Browse available refrigerators, washers, dryers, and other home appliances from WenAppliances."
+        canonicalPath="/products"
+        type="website"
+      />
+    );
+  }
+
+  const productMatch = currentRoute.match(/^\/product\/([^/]+)$/);
+  if (productMatch) {
+    let productId = productMatch[1];
+    try {
+      productId = decodeURIComponent(productId);
+    } catch {
+      // Keep the route segment as-is when a malformed URL is provided.
+    }
+
+    const product = products.find((item) => String(item.id) === String(productId));
+    const canonicalPath = `/product/${encodeURIComponent(productId)}`;
+    if (!product) {
+      return (
+        <SEO
+          title="Appliance details | WenAppliances"
+          description="View appliance details, pricing, availability, delivery options, and support from WenAppliances."
+          canonicalPath={canonicalPath}
+          robots="noindex, nofollow"
+        />
+      );
+    }
+
+    const productImages = getProductImages(product).map(getSeoImageUrl).filter(Boolean);
+    const description = getSeoDescription(
+      product.description,
+      `${product.name} from WenAppliances. Check current pricing, availability, delivery options, and product details.`
+    );
+    const stock = Number(product.stock || 0);
+
+    return (
+      <SEO
+        title={`${product.name} | WenAppliances`}
+        description={description}
+        canonicalPath={canonicalPath}
+        image={productImages[0] || STOREFRONT_DEFAULT_IMAGE}
+        imageAlt={`${product.name} from WenAppliances`}
+        type="product"
+        jsonLd={{
+          '@context': 'https://schema.org',
+          '@type': 'Product',
+          name: product.name,
+          description,
+          image: productImages.length > 0 ? productImages : [STOREFRONT_DEFAULT_IMAGE],
+          sku: product.sku || undefined,
+          category: product.category || undefined,
+          brand: {
+            '@type': 'Brand',
+            name: 'WenAppliances'
+          },
+          offers: {
+            '@type': 'Offer',
+            url: `${STOREFRONT_SITE_URL}${canonicalPath}`,
+            priceCurrency: 'USD',
+            price: Number.isFinite(Number(product.price)) ? Number(product.price).toFixed(2) : '0.00',
+            availability: stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock'
+          }
+        }}
+      />
+    );
+  }
+
+  return (
+    <SEO
+      title="WenAppliances"
+      description="Shop home appliances from WenAppliances."
+      canonicalPath={currentRoute || '/'}
+      robots="noindex, nofollow"
+    />
+  );
 };
 
 export default function App() {
@@ -559,6 +685,7 @@ export default function App() {
   return (
     <ChatNotificationProvider isAdmin={isAdminApp} active={!isAdminApp || user?.role === 'SUPER_ADMIN'}>
       <AppContext.Provider value={contextValue}>
+        <RouteSeo currentRoute={currentRoute} products={products} />
         <div className="min-h-screen font-sans bg-[#F4F3EF] text-[#111214] antialiased">
           {renderRoute()}
         </div>

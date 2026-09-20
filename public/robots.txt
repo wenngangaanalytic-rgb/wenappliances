@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /checkout
+Disallow: /my-orders
+Disallow: /track-order
+Disallow: /reset-password
+Disallow: /hq-operations
+
+Sitemap: https://wenappliances.net/sitemap.xml

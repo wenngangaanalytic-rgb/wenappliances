@@ -8,10 +8,18 @@ const adminProjectId = 'prj_nDn7WQbO262RTrrY3ISPUG3JIqq2';
 const isAdminProject = process.env.VERCEL_PROJECT_ID === adminProjectId;
 const buildMode = isAdminProject ? 'admin' : 'storefront';
 const viteBin = resolve(projectRoot, 'node_modules', 'vite', 'bin', 'vite.js');
+const sitemapScript = resolve(projectRoot, 'scripts', 'generate-sitemap.mjs');
 
 // Always build from a clean generated directory so a previous storefront
 // build cannot leave stale assets in an admin deployment (or vice versa).
 rmSync(join(projectRoot, 'dist'), { recursive: true, force: true });
+
+if (!isAdminProject) {
+  execFileSync(process.execPath, [sitemapScript], {
+    cwd: projectRoot,
+    stdio: 'inherit'
+  });
+}
 
 execFileSync(process.execPath, [viteBin, 'build', '--mode', buildMode], {
   cwd: projectRoot,

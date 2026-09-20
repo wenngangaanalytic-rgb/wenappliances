@@ -8,6 +8,7 @@
     "dev:storefront": "vite --mode storefront",
     "dev:admin": "vite --mode admin",
     "build": "node scripts/build-for-vercel.mjs",
+    "prebuild:storefront": "node scripts/generate-sitemap.mjs",
     "build:storefront": "vite build --mode storefront",
     "build:admin": "vite build --mode admin",
     "android:admin:sync": "npm run build:admin && npx cap sync android",
