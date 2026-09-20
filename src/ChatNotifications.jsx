@@ -7,9 +7,7 @@ import { ensureChatIdentity, getChatSessionId } from './chatSession';
 import { CHAT_ACTIVITY_EVENT, isActiveChat } from './chatActivity';
 import {
   clearNativeChatNotifications,
-  ensureExactAlarmPermission,
   getNotificationPermission,
-  isNativeNotificationApp,
   requestBrowserNotificationPermission,
   showChatNotification
 } from './browserNotifications';
@@ -293,7 +291,6 @@ export function ChatNotificationBell() {
     const nextPermission = await requestBrowserNotificationPermission();
     setPermission(nextPermission);
     if (nextPermission === 'granted') {
-      if (isNativeNotificationApp()) await ensureExactAlarmPermission();
       toast.success('Chat pop-up notifications are enabled.');
     }
     if (nextPermission === 'denied') {

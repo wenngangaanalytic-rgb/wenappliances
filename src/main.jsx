@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import App from './app.jsx';
 import AnalyticsConsent from './AnalyticsConsent.jsx';
+import { initializeNativeNotifications } from './browserNotifications';
 import './index.css';
 
 const isAdminBuild = import.meta.env.MODE === 'admin';
@@ -26,6 +27,7 @@ const setApplicationIdentity = () => {
 };
 
 setApplicationIdentity();
+void initializeNativeNotifications();
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

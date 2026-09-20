@@ -3,7 +3,9 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 
 const TRACKED_ORDERS_KEY = 'wenappliances:notification-orders';
 const NATIVE_PERMISSION_KEY = 'wenappliances:native-notification-permission';
-const NATIVE_CHANNEL_ID = 'wenappliances-alerts';
+// Keep a versioned channel so devices that previously created a misconfigured
+// channel receive the corrected sound/vibration defaults.
+const NATIVE_CHANNEL_ID = 'wenappliances-alerts-v2';
 
 const isNativeApp = () => Capacitor.isNativePlatform();
 
@@ -52,6 +54,24 @@ const ensureNativeActionListener = async () => {
     }
   );
   await nativeActionListenerPromise;
+};
+
+// Initialise the Android notification channel as soon as the Capacitor
+// bridge is ready. Permission is requested by the native activity on Android
+// 13+ and by the in-app enable button when the user needs to retry it.
+export const initializeNativeNotifications = async () => {
+  if (!isNativeApp()) return 'unsupported';
+
+  try {
+    await ensureNativeChannel();
+    await ensureNativeActionListener();
+    const permission = await LocalNotifications.checkPermissions();
+    rememberNativePermission(permission.display);
+    return permission.display;
+  } catch (error) {
+    console.warn('Native notification initialization unavailable:', error);
+    return 'denied';
+  }
 };
 
 const makeNativeNotificationId = () => {
@@ -117,6 +137,8 @@ export const requestBrowserNotificationPermission = async () => {
       const current = await LocalNotifications.checkPermissions();
       if (current.display === 'granted') {
         rememberNativePermission('granted');
+        await ensureNativeChannel();
+        await ensureNativeActionListener();
         return 'granted';
       }
 
@@ -127,6 +149,10 @@ export const requestBrowserNotificationPermission = async () => {
 
       const requested = await LocalNotifications.requestPermissions();
       rememberNativePermission(requested.display);
+      if (requested.display === 'granted') {
+        await ensureNativeChannel();
+        await ensureNativeActionListener();
+      }
       return requested.display;
     } catch (error) {
       console.warn('Native notification permission unavailable:', error);
@@ -171,8 +197,9 @@ export const showOrderNotification = async ({
         ongoing: false,
         group: 'wenappliances-alerts',
         extra: { url, tag, threadKey },
+        smallIcon: 'ic_stat_wen',
         iconColor: '#9C6644',
-        isExactNotification: true
+        sound: 'default'
       };
 
       if (Number.isFinite(badge)) notification.badge = Math.max(0, Math.floor(badge));
