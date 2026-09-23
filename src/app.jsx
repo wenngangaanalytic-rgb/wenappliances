@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useMemo, useReducer, useRef } from 'react';
+import React, { useState, useEffect, useContext, useMemo, useReducer, useRef, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { 
   ShoppingCart, Search, Menu, X, User, ChevronRight, 
@@ -33,6 +33,14 @@ import {
   CUSTOMER_PORTAL_ADMIN_MESSAGE,
   isSuperAdminUser
 } from './authSecurity';
+import { formatMoney } from './utils/format';
+import {
+  getProductImages,
+  getWenAppliancesStoragePath,
+  normalizeProduct,
+  parseImageList
+} from './utils/images';
+import { normalizeAdminOrderStatus } from './utils/status';
 
 // The admin deployment keeps its own name while sharing the WenAppliances mark
 // with the storefront, receipts, notifications, and installed app.
@@ -110,64 +118,6 @@ class AdminRouteErrorBoundary extends React.Component {
   }
 }
 
-const formatMoney = (amount) => {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
-};
-
-const parseImageList = (value) => {
-  if (Array.isArray(value)) return value.filter(Boolean);
-  if (typeof value !== 'string' || !value.trim()) return [];
-
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.filter(Boolean) : [value];
-  } catch {
-    return [value];
-  }
-};
-
-const normalizeProduct = (product) => {
-  const storedImages = parseImageList(product.images);
-  const image = product.image || product.image_url || product.imageUrl || storedImages[0] || '';
-  const gallery = parseImageList(product.gallery);
-  const allImages = [...new Set([image, ...storedImages, ...gallery].filter(Boolean))];
-  const stock = Number(product.stock ?? 0);
-
-  return {
-    ...product,
-    name: product.name || 'Unnamed appliance',
-    sku: product.sku || '—',
-    category: product.category || 'Other',
-    description: product.description || '',
-    price: Number(product.price ?? 0),
-    cost: Number(product.cost ?? 0),
-    stock,
-    status: String(product.status || (stock > 0 ? 'PUBLISHED' : 'OUT_OF_STOCK')).toUpperCase(),
-    image,
-    images: allImages,
-    gallery: allImages
-  };
-};
-
-const getProductImages = (product) => {
-  const normalized = normalizeProduct(product);
-  return [...new Set([normalized.image, ...normalized.gallery].filter(Boolean))];
-};
-
-const getWenAppliancesStoragePath = (value) => {
-  if (typeof value !== 'string' || !value.trim()) return null;
-
-  const marker = '/storage/v1/object/public/Wenappliances/';
-  const markerIndex = value.indexOf(marker);
-  if (markerIndex === -1) return null;
-
-  const path = value.slice(markerIndex + marker.length).split('?')[0];
-  try {
-    return decodeURIComponent(path);
-  } catch {
-    return path;
-  }
-};
 
 const ProductPlaceholder = ({ className = '', dark = false }) => (
   <div className={`flex items-center justify-center ${dark ? 'bg-[#24272A] text-[#858884]' : 'bg-[#EAE8E1] text-[#9C6644]'} ${className}`}>
@@ -410,13 +360,13 @@ export default function App() {
     return () => window.removeEventListener('popstate', handleBrowserNavigation);
   }, []);
 
-  const loadProducts = async () => {
+  const loadProducts = useCallback(async () => {
     setProductsLoading(true);
     setProductsError('');
 
     const { data, error } = await supabase
       .from('products')
-      .select('*');
+      .select('id, name, category, price, stock, status, images, description');
 
     if (error) {
       setProducts([]);
@@ -426,37 +376,11 @@ export default function App() {
     }
 
     setProductsLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function fetchProducts() {
-      setProductsLoading(true);
-      setProductsError('');
-
-      const { data, error } = await supabase
-        .from('products')
-        .select('*');
-
-      if (cancelled) return;
-
-      if (error) {
-        setProducts([]);
-        setProductsError(error.message);
-      } else {
-        setProducts((data ?? []).map(normalizeProduct));
-      }
-
-      setProductsLoading(false);
-    }
-
-    fetchProducts();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    void loadProducts();
+  }, [loadProducts]);
 
   // Router logic
   const navigate = (path) => {
@@ -478,7 +402,7 @@ export default function App() {
   const addToCart = (productId, quantity = 1) => {
     const product = products.find(p => p.id === productId);
     if (!product || product.stock < quantity) {
-        alert("Not enough stock available."); // Fallback if UI check fails
+        toast.error('Not enough stock available.'); // Fallback if UI check fails
         return;
     }
     
@@ -509,43 +433,6 @@ export default function App() {
 
   const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-
-  // Order Logic
-  const placeOrder = async (customerDetails) => {
-    if (cart.length === 0) return false;
-
-    const orderId = `ORD-${new Date().toISOString().split('T')[0].replace(/-/g, '')}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
-    
-    const newOrder = {
-      id: orderId,
-      userId: user ? user.id : 'guest',
-      customerName: customerDetails.name,
-      total: cartTotal,
-      status: 'PENDING',
-      date: new Date().toISOString(),
-      items: [...cart]
-    };
-
-    for (const cartItem of cart) {
-      const product = products.find(p => p.id === cartItem.productId);
-      if (!product || product.stock < cartItem.quantity) return false;
-    }
-
-    // Checkout still needs a server-side order/payment transaction before it
-    // can safely change shared inventory. Keep this local until that backend
-    // workflow is added instead of allowing anonymous database writes.
-    setProducts(prevProducts => prevProducts.map(product => {
-      const cartItem = cart.find(c => c.productId === product.id);
-      if (!cartItem) return product;
-
-      const newStock = product.stock - cartItem.quantity;
-      return { ...product, stock: newStock, status: newStock <= 0 ? 'OUT_OF_STOCK' : product.status };
-    }));
-
-    setOrders(prev => [newOrder, ...prev]);
-    setCart([]);
-    return orderId;
-  };
 
   const saveProduct = async (product) => {
     const { isNew, id, created_at, updated_at, ...formProduct } = product;
@@ -645,7 +532,6 @@ export default function App() {
     products, setProducts, saveProduct, deleteProduct, loadProducts, productsLoading, productsError,
     orders, setOrders,
     cart, addToCart, updateCartQty, clearCart, cartTotal, cartItemCount, isCartOpen, setIsCartOpen,
-    placeOrder,
     navigate, currentRoute,
     isAdminApp, adminBasePath,
     theme, toggleTheme,
@@ -708,6 +594,8 @@ const StoreLayout = ({ children }) => {
   const { cartItemCount, setIsCartOpen, navigate, user, products, searchQuery, setSearchQuery, setActiveCategory, productsLoading, productsError, loadProducts, theme, toggleTheme } = useContext(AppContext);
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [contactSent, setContactSent] = useState(false);
+  const [contactForm, setContactForm] = useState({ name: '', email: '', message: '' });
+  const [contactLoading, setContactLoading] = useState(false);
   const [newsletterEmail, setNewsletterEmail] = useState('');
   const [newsletterMessage, setNewsletterMessage] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -749,11 +637,42 @@ const StoreLayout = ({ children }) => {
     navigate('/products');
   };
 
-  const handleNewsletterSubmit = (event) => {
+  const handleNewsletterSubmit = async (event) => {
     event.preventDefault();
     if (!newsletterEmail.trim()) return;
-    setNewsletterMessage('Thanks! Newsletter updates are coming soon 😔');
-    setNewsletterEmail('');
+    const { error } = await supabase.from('newsletter_subscribers').insert({
+      email: newsletterEmail.trim().toLowerCase()
+    });
+    if (error?.code === '23505') {
+      setNewsletterMessage("You're already subscribed!");
+    } else if (error) {
+      setNewsletterMessage('Something went wrong. Please try again.');
+    } else {
+      setNewsletterMessage("You're subscribed! We'll be in touch.");
+      setNewsletterEmail('');
+    }
+  };
+
+  const handleContactSubmit = async (event) => {
+    event.preventDefault();
+    const name = contactForm.name.trim();
+    const email = contactForm.email.trim().toLowerCase();
+    const message = contactForm.message.trim();
+    if (!name || !email || !message) {
+      toast.error('Please complete all contact fields.');
+      return;
+    }
+
+    setContactLoading(true);
+    const { error } = await supabase.from('contact_messages').insert({ name, email, message });
+    setContactLoading(false);
+    if (error) {
+      toast.error('Could not send your message. Please email us directly.');
+      return;
+    }
+
+    setContactSent(true);
+    setContactForm({ name: '', email: '', message: '' });
   };
   
   const handleNav = (path, clearFilters = false) => {
@@ -814,6 +733,11 @@ const StoreLayout = ({ children }) => {
                       <span className="shrink-0 text-xs text-[#858884]">{suggestion.type}</span>
                     </button>
                   ))}
+                </div>
+              )}
+              {isSearchOpen && searchQuery.trim() && searchSuggestions.length === 0 && (
+                <div className="absolute left-0 right-0 top-full z-50 mt-2 rounded-xl border border-[#E5E4E0] bg-white px-4 py-3 text-sm text-[#858884] shadow-xl">
+                  No products match “{searchQuery.trim()}”
                 </div>
               )}
             </div>
@@ -892,6 +816,11 @@ const StoreLayout = ({ children }) => {
                         <span className="shrink-0 text-xs text-[#858884]">{suggestion.type}</span>
                       </button>
                     ))}
+                  </div>
+                )}
+                {isSearchOpen && searchQuery.trim() && searchSuggestions.length === 0 && (
+                  <div className="absolute left-0 right-0 top-full z-10 mt-2 rounded-xl border border-[#E5E4E0] bg-white px-3 py-2.5 text-sm text-[#858884] shadow-xl">
+                    No products match “{searchQuery.trim()}”
                   </div>
                 )}
               </div>
@@ -996,21 +925,21 @@ const StoreLayout = ({ children }) => {
                   <p>Phone: {SUPPORT_PHONE}</p>
                 </div>
 
-                <div className="space-y-4 text-left">
+                <form onSubmit={handleContactSubmit} className="space-y-4 text-left">
                   <div>
-                    <label className="block text-sm font-medium text-[#4A5568] mb-1">Name</label>
-                    <input type="text" className="w-full border border-[#E5E4E0] rounded-lg px-4 py-2 text-[#111214] focus:ring-2 focus:ring-[#9C6644]/50 focus:border-[#9C6644] outline-none" />
+                    <label htmlFor="contact-name" className="block text-sm font-medium text-[#4A5568] mb-1">Name</label>
+                    <input id="contact-name" type="text" required maxLength={120} value={contactForm.name} onChange={(event) => setContactForm((current) => ({ ...current, name: event.target.value }))} className="w-full border border-[#E5E4E0] rounded-lg px-4 py-2 text-[#111214] focus:ring-2 focus:ring-[#9C6644]/50 focus:border-[#9C6644] outline-none" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-[#4A5568] mb-1">Email</label>
-                    <input type="email" className="w-full border border-[#E5E4E0] rounded-lg px-4 py-2 text-[#111214] focus:ring-2 focus:ring-[#9C6644]/50 focus:border-[#9C6644] outline-none" />
+                    <label htmlFor="contact-email" className="block text-sm font-medium text-[#4A5568] mb-1">Email</label>
+                    <input id="contact-email" type="email" required maxLength={320} value={contactForm.email} onChange={(event) => setContactForm((current) => ({ ...current, email: event.target.value }))} className="w-full border border-[#E5E4E0] rounded-lg px-4 py-2 text-[#111214] focus:ring-2 focus:ring-[#9C6644]/50 focus:border-[#9C6644] outline-none" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-[#4A5568] mb-1">Message</label>
-                    <textarea rows={4} className="w-full border border-[#E5E4E0] rounded-lg px-4 py-2 text-[#111214] focus:ring-2 focus:ring-[#9C6644]/50 focus:border-[#9C6644] outline-none resize-none"></textarea>
+                    <label htmlFor="contact-message" className="block text-sm font-medium text-[#4A5568] mb-1">Message</label>
+                    <textarea id="contact-message" rows={4} required maxLength={5000} value={contactForm.message} onChange={(event) => setContactForm((current) => ({ ...current, message: event.target.value }))} className="w-full border border-[#E5E4E0] rounded-lg px-4 py-2 text-[#111214] focus:ring-2 focus:ring-[#9C6644]/50 focus:border-[#9C6644] outline-none resize-none"></textarea>
                   </div>
-                  <button onClick={() => setContactSent(true)} className="w-full bg-[#111214] text-white py-3 rounded-lg font-medium hover:bg-[#24272A] transition-colors mt-4">Send to {SUPPORT_EMAIL}</button>
-                </div>
+                  <button type="submit" disabled={contactLoading} className="w-full bg-[#111214] text-white py-3 rounded-lg font-medium hover:bg-[#24272A] transition-colors mt-4 disabled:cursor-not-allowed disabled:opacity-60">{contactLoading ? 'Sending…' : `Send to ${SUPPORT_EMAIL}`}</button>
+                </form>
               </>
             )}
           </div>
@@ -1231,7 +1160,7 @@ const StoreCatalog = () => {
         <h2 className="text-3xl font-bold tracking-tight">
           {searchQuery ? `Search Results for "${searchQuery}"` : (activeCategory || 'All Products')}
         </h2>
-        <p className="text-[#4A5568] mt-2">Browse our complete catalog of premium electronics.</p>
+        <p className="text-[#4A5568] mt-2">Browse our complete catalog of home appliances.</p>
       </div>
       
       <div className="flex flex-col md:flex-row gap-8">
@@ -1496,7 +1425,7 @@ const StoreProductDetail = ({ id }) => {
                   onClick={() => setImgIndex(idx)}
                   className={`w-16 h-16 rounded-md bg-white border-2 overflow-hidden transition-all shrink-0 ${imgIndex === idx ? 'border-[#9C6644] opacity-100 scale-110 shadow-sm' : 'border-transparent opacity-60 hover:opacity-100'}`}
                 >
-                  <img src={img} alt={`Thumb ${idx}`} className="product-photo h-full w-full object-cover" />
+                  <img src={img} alt={`${product.name} — photo ${idx + 1}`} className="product-photo h-full w-full object-cover" />
                 </button>
               ))}
             </div>
@@ -1613,10 +1542,10 @@ const StoreCheckout = () => {
         setOrderId(newOrderId);
         setOrderComplete(true);
       } else {
-        alert("Error processing order. Check stock and your Supabase permissions.");
+        toast.error('Error processing order. Check stock and your Supabase permissions.');
       }
     } catch (error) {
-      alert(error.message || "Error processing order.");
+      toast.error(error.message || 'Error processing order.');
     } finally {
       setIsProcessing(false);
     }
@@ -1751,7 +1680,6 @@ const AdminLayout = ({ children }) => {
     };
 
     refreshActiveOrderCount();
-    const refreshTimer = window.setInterval(refreshActiveOrderCount, 10000);
     const ordersChannel = supabase
       .channel(`admin-order-indicator-${Date.now()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, refreshActiveOrderCount)
@@ -1759,7 +1687,6 @@ const AdminLayout = ({ children }) => {
 
     return () => {
       active = false;
-      window.clearInterval(refreshTimer);
       supabase.removeChannel(ordersChannel);
     };
   }, []);
@@ -1903,14 +1830,6 @@ const AdminNewProduct = () => {
   );
 };
 
-const normalizeAdminOrderStatus = (status) => {
-  const value = String(status || 'Pending').trim().toLowerCase();
-  if (value.includes('cancel')) return 'CANCELLED';
-  if (value.includes('complete') || value.includes('deliver') || value.includes('picked')) return 'COMPLETED';
-  if (value.includes('confirm') || value.includes('process')) return 'CONFIRMED';
-  return 'PENDING';
-};
-
 const AdminDashboard = () => {
   const { navigate, adminBasePath } = useContext(AppContext);
   const [orders, setOrders] = useState([]);
@@ -1945,7 +1864,6 @@ const AdminDashboard = () => {
     };
 
     loadDashboard();
-    const refreshTimer = window.setInterval(loadDashboard, 30000);
     const dashboardChannel = supabase
       .channel(`admin-dashboard-${Date.now()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, loadDashboard)
@@ -1954,7 +1872,6 @@ const AdminDashboard = () => {
 
     return () => {
       active = false;
-      window.clearInterval(refreshTimer);
       supabase.removeChannel(dashboardChannel);
     };
   }, []);
@@ -2037,11 +1954,24 @@ const StatCard = ({ title, value, icon: Icon, trend, color = "text-[#F1F1EF]" })
   </div>
 );
 
+const ConfirmModal = ({ message, onConfirm, onCancel }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Confirm deletion">
+    <div className="w-full max-w-sm rounded-xl border border-[#24272A] bg-[#17191C] p-6 shadow-2xl">
+      <p className="text-sm text-[#F1F1EF]">{message}</p>
+      <div className="mt-6 flex justify-end gap-3">
+        <button type="button" onClick={onCancel} className="rounded-lg px-4 py-2 text-sm font-medium text-[#B8BAB7] transition-colors hover:bg-[#24272A]">Cancel</button>
+        <button type="button" onClick={onConfirm} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700">Delete</button>
+      </div>
+    </div>
+  </div>
+);
+
 const AdminProducts = () => {
   const { products, saveProduct, deleteProduct, productsLoading, productsError, navigate, adminBasePath } = useContext(AppContext);
   const [editingProduct, setEditingProduct] = useState(null);
   const [saveError, setSaveError] = useState('');
   const [deletingProductId, setDeletingProductId] = useState(null);
+  const [productToDelete, setProductToDelete] = useState(null);
 
   const handleSave = async (updatedProduct) => {
     try {
@@ -2055,11 +1985,6 @@ const AdminProducts = () => {
   };
 
   const handleDelete = async (product) => {
-    const confirmed = window.confirm(
-      `Delete “${product.name}” completely? This removes the product and its uploaded images and cannot be undone.`
-    );
-    if (!confirmed) return;
-
     setDeletingProductId(product.id);
     try {
       const result = await deleteProduct(product);
@@ -2077,6 +2002,7 @@ const AdminProducts = () => {
       }
     } finally {
       setDeletingProductId(null);
+      setProductToDelete(null);
     }
   };
 
@@ -2132,7 +2058,7 @@ const AdminProducts = () => {
                     <div className="text-xs font-mono text-[#858884] mt-1">{p.sku} • {p.category}</div>
                   </td>
                   <td className="px-6 py-4 text-right font-medium text-[#F1F1EF]">
-                    {p.price.toLocaleString()}
+                    {formatMoney(p.price)}
                   </td>
                   <td className="px-6 py-4 text-center">
                     <span className={`inline-flex items-center justify-center px-2 py-1 rounded text-xs font-bold ${p.stock <= 0 ? 'bg-red-500/20 text-red-400' : (p.stock < 10 ? 'bg-amber-500/20 text-amber-400' : 'bg-[#24272A] text-[#B8BAB7]')}`}>
@@ -2147,7 +2073,7 @@ const AdminProducts = () => {
                     <button type="button" onClick={() => setEditingProduct(p)} className="text-[#858884] hover:text-[#9C6644] p-2 transition-colors" title={`Edit ${p.name}`} aria-label={`Edit ${p.name}`}>
                       <Edit className="h-4 w-4" />
                     </button>
-                    <button type="button" onClick={() => handleDelete(p)} disabled={deletingProductId === p.id} className="p-2 text-[#858884] transition-colors hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50" title={`Delete ${p.name}`} aria-label={`Delete ${p.name}`}>
+                    <button type="button" onClick={() => setProductToDelete(p)} disabled={deletingProductId === p.id} className="p-2 text-[#858884] transition-colors hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50" title={`Delete ${p.name}`} aria-label={`Delete ${p.name}`}>
                       {deletingProductId === p.id ? <span className="block h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" /> : <Trash2 className="h-4 w-4" />}
                     </button>
                     </div>
@@ -2158,6 +2084,13 @@ const AdminProducts = () => {
           </table>
         </div>
       </div>
+      {productToDelete && (
+        <ConfirmModal
+          message={`Delete “${productToDelete.name}” completely? This removes the product and its uploaded images and cannot be undone.`}
+          onConfirm={() => handleDelete(productToDelete)}
+          onCancel={() => setProductToDelete(null)}
+        />
+      )}
     </div>
   );
 };
@@ -2284,17 +2217,10 @@ const ProductEditor = ({ product, onSave, onCancel }) => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#B8BAB7] mb-2">Category</label>
-                <input required type="text" list="category-options" name="category" value={formData.category} onChange={handleChange} placeholder="e.g. Washers" className="w-full bg-[#0B0B0C] border border-[#24272A] rounded-lg px-4 py-2.5 text-[#F1F1EF] focus:outline-none focus:border-[#9C6644] transition-all" />
-                <datalist id="category-options">
-                  <option value="Refrigerators" />
-                  <option value="Washers" />
-                  <option value="Dryers" />
-                  <option value="Washer & Dryer" />
-                  <option value="Ovens" />
-                  <option value="Microwaves" />
-                  <option value="TVs" />
-                  <option value="Other" />
-                </datalist>
+                <select required name="category" value={formData.category} onChange={handleChange} className="w-full bg-[#0B0B0C] border border-[#24272A] rounded-lg px-4 py-2.5 text-[#F1F1EF] focus:outline-none focus:border-[#9C6644] transition-all">
+                  <option value="">Select a category</option>
+                  {STORE_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+                </select>
               </div>
             </div>
             <div>
@@ -2679,7 +2605,7 @@ const StatusBadge = ({ status }) => {
   };
 
   const style = styles[status] || styles.DRAFT;
-  const label = status.replace(/_/g, ' ');
+  const label = String(status || '').replace(/_/g, ' ');
 
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase ${style}`}>

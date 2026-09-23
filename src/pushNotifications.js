@@ -44,6 +44,12 @@ const showForegroundPush = async (userRole, notification) => {
 export const registerNativePushNotifications = async ({ user }) => {
   if (!Capacitor.isNativePlatform() || !user?.id) return undefined;
 
+  const { LocalNotifications } = await import('@capacitor/local-notifications');
+  const localPermission = await LocalNotifications.checkPermissions();
+  if (localPermission.display !== 'granted') {
+    await LocalNotifications.requestPermissions();
+  }
+
   const permission = await PushNotifications.checkPermissions();
   const receivePermission = permission.receive === 'granted'
     ? permission.receive
@@ -75,7 +81,13 @@ export const registerNativePushNotifications = async ({ user }) => {
   const actionHandle = await PushNotifications.addListener('pushNotificationActionPerformed', ({ notification }) => {
     const data = notification?.data || {};
     const url = getNotificationUrl(user.role, data);
-    if (typeof window !== 'undefined') window.location.assign(url);
+    if (typeof window === 'undefined') return;
+    const navigate = () => window.location.assign(url);
+    if (document.readyState === 'complete') {
+      navigate();
+    } else {
+      window.addEventListener('load', navigate, { once: true });
+    }
   });
 
   // Register only after all listeners are attached so the first token event is

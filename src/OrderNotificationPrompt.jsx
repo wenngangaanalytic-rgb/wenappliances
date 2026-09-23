@@ -23,6 +23,31 @@ export default function OrderNotificationPrompt({ isAdmin = false, active = true
     }
   }, [isAdmin]);
 
+  useEffect(() => {
+    let active = true;
+
+    const syncPermission = async () => {
+      let nextPermission = getNotificationPermission();
+      if (isNativeNotificationApp()) {
+        try {
+          const { LocalNotifications } = await import('@capacitor/local-notifications');
+          const current = await LocalNotifications.checkPermissions();
+          nextPermission = current.display;
+        } catch {
+          nextPermission = getNotificationPermission();
+        }
+      }
+      if (active) setPermission(nextPermission);
+    };
+
+    void syncPermission();
+    window.addEventListener('focus', syncPermission);
+    return () => {
+      active = false;
+      window.removeEventListener('focus', syncPermission);
+    };
+  }, [isAdmin]);
+
   if (!active || !canUseBrowserNotifications() || permission === 'granted' || dismissed) return null;
 
   const isBlocked = permission === 'denied';

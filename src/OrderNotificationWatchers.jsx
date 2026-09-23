@@ -21,7 +21,7 @@ export function AdminOrderNotificationWatcher({ user }) {
     let active = true;
     const statusByOrderId = new Map();
 
-    const announceNewOrder = (order) => {
+    const announceNewOrder = (order, pendingCount) => {
       const status = normalizeStatus(order?.status);
       if (!order?.id || !['pending', 'awaiting confirmation'].includes(status)) return;
 
@@ -30,7 +30,8 @@ export function AdminOrderNotificationWatcher({ user }) {
         body: `${order.customer_name || 'A customer'} placed an order for ${formatMoney(order.total_amount)}.`,
         tag: `admin-order-${order.id}`,
         url: '/orders',
-        icon: '/wen-icon.png'
+        icon: '/wen-icon.png',
+        badge: pendingCount
       });
     };
 
@@ -54,9 +55,11 @@ export function AdminOrderNotificationWatcher({ user }) {
 
       const currentStatus = normalizeStatus(order.status);
       const previousStatus = statusByOrderId.get(orderId);
+      const pendingCount = [...statusByOrderId.values()].filter((status) => ['pending', 'awaiting confirmation'].includes(status)).length
+        + (['pending', 'awaiting confirmation'].includes(currentStatus) ? 1 : 0);
 
       if (!initial && previousStatus === undefined && ['pending', 'awaiting confirmation'].includes(currentStatus)) {
-        announceNewOrder(order);
+        announceNewOrder(order, pendingCount);
       }
 
       if (!initial && previousStatus && previousStatus !== currentStatus && currentStatus === 'cancelled' && isCustomerCancellation(order)) {

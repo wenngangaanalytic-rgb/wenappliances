@@ -214,8 +214,29 @@ export default async function handler(req, res) {
         priority: 'high',
         notification: {
           sound: 'default',
-          channelId: 'chat_messages'
+          channelId: 'chat_messages',
+          defaultVibrateTimings: true,
+          defaultSound: true,
+          defaultLightSettings: true,
+          notificationPriority: 'PRIORITY_HIGH',
+          visibility: 'PUBLIC',
+          icon: 'ic_stat_wen',
+          color: '#9C6644',
+          localOnly: false,
+          sticky: false
         }
+      },
+      apns: {
+        payload: { aps: { sound: 'default', badge: 1, contentAvailable: true } },
+        headers: { 'apns-priority': '10' }
+      },
+      webpush: {
+        notification: {
+          icon: '/wen-icon.png',
+          badge: '/wen-icon.png',
+          vibrate: [200, 100, 200]
+        },
+        fcmOptions: { link: '/' }
       }
     };
 

@@ -28,11 +28,12 @@ const ensureNativeChannel = async () => {
       id: NATIVE_CHANNEL_ID,
       name: 'Wen Appliances alerts',
       description: 'New orders, cancellations, and customer chat messages.',
-      importance: 4,
+      importance: 5,
       visibility: 1,
       lights: true,
       lightColor: '#9C6644',
-      vibration: true
+      vibration: true,
+      sound: 'default'
     }).catch((error) => {
       nativeChannelPromise = undefined;
       throw error;
@@ -169,7 +170,11 @@ export const showOrderNotification = async ({
       };
 
       if (Number.isFinite(badge)) notification.badge = Math.max(0, Math.floor(badge));
-      if (Capacitor.getPlatform() === 'android') notification.channelId = NATIVE_CHANNEL_ID;
+      if (Capacitor.getPlatform() === 'android') {
+        notification.channelId = NATIVE_CHANNEL_ID;
+        notification.vibrationPattern = [0, 250, 100, 250];
+        notification.ledColor = '#9C6644';
+      }
       await LocalNotifications.schedule({ notifications: [notification] });
 
       if (autoDismissAfterMs > 0 && threadKey) {
