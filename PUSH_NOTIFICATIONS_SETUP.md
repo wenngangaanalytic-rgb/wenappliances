@@ -25,25 +25,37 @@ present.
 Add these server-only production variables to the Vercel project hosting the
 storefront:
 
-- `FIREBASE_SERVICE_ACCOUNT`: the replacement Firebase service-account JSON
+- `SUPABASE_URL`: the production Supabase URL
 - `SUPABASE_SERVICE_ROLE_KEY`: the Supabase server-only service-role key
-- `MESSAGE_WEBHOOK_SECRET`: a long random value shared only with the webhook
+- `FIREBASE_SERVICE_ACCOUNT`: the replacement Firebase service-account JSON
+- `NOTIFICATION_WEBHOOK_SECRET`: a long random value shared only with the webhook
+
+The endpoint also accepts the older `MESSAGE_WEBHOOK_SECRET` name during the
+transition. Keep the Firebase and Supabase values as Vercel **Production
+secrets**, never as `VITE_` variables.
 
 Never expose any of these through a `VITE_` variable or the browser bundle.
 
-## 4. Configure the Supabase Database Webhook
+## 4. Configure the Supabase Database Webhooks
 
-Create a webhook for `public.messages` on `INSERT` and send it as a `POST` to:
+Create webhooks for these events and send each one as a `POST` to:
 
 `https://wenappliances.vercel.app/api/send-notification`
 
+- `public.messages` — `INSERT`
+- `public.orders` — `INSERT`
+- `public.orders` — `UPDATE`
+
 Add this request header, using the same value as the Vercel secret:
 
-`x-webhook-secret: <MESSAGE_WEBHOOK_SECRET>`
+`x-webhook-secret: <NOTIFICATION_WEBHOOK_SECRET>`
 
-The endpoint routes customer messages to all registered admins and admin replies
-to the registered customer for that product chat. Invalid FCM tokens are cleared
-automatically.
+The endpoint routes customer messages to all registered admins, admin replies to
+the registered customer for that product chat, new pending orders to admins,
+customer cancellations to admins, and confirmed/completed/cancelled order
+updates to the registered customer. Invalid FCM tokens are cleared
+automatically. See [`supabase/fcm-webhooks.md`](supabase/fcm-webhooks.md) for
+the exact production checklist and guest-checkout limitation.
 
 ## 5. Install and test
 
