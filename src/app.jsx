@@ -26,6 +26,9 @@ import OrderNotificationPrompt from './OrderNotificationPrompt';
 import { AdminOrderNotificationWatcher, CustomerOrderNotificationWatcher } from './OrderNotificationWatchers';
 import { rememberOrderForNotifications } from './browserNotifications';
 import PushNotificationRegistration from './PushNotificationRegistration';
+import NativeAdminController from './NativeAdminController';
+import PullToRefresh from './PullToRefresh';
+import { triggerLightHaptic, triggerSuccessHaptic } from './nativeAdmin';
 import { SUPPORT_EMAIL, SUPPORT_PHONE } from './businessInfo';
 import SEO, { STOREFRONT_DEFAULT_IMAGE, STOREFRONT_SITE_URL } from './SEO.jsx';
 import {
@@ -366,7 +369,10 @@ export default function App() {
 
     const { data, error } = await supabase
       .from('products')
-      .select('id, name, category, price, stock, status, images, description');
+      // Keep this projection aligned with the production products table.
+      // Catalog status is derived by normalizeProduct from stock because the
+      // current schema does not include a products.status column.
+      .select('id, name, category, price, stock, images, description');
 
     if (error) {
       setProducts([]);
@@ -573,6 +579,7 @@ export default function App() {
     <ChatNotificationProvider isAdmin={isAdminApp} user={user} active={!isAdminApp || user?.role === 'SUPER_ADMIN'}>
       <AppContext.Provider value={contextValue}>
         <PushNotificationRegistration user={user} active={!isAdminApp || user?.role === 'SUPER_ADMIN'} />
+        <NativeAdminController active={isAdminApp} currentRoute={currentRoute} theme={theme} />
         <RouteSeo currentRoute={currentRoute} products={products} />
         <div className="min-h-screen font-sans bg-[#F4F3EF] text-[#111214] antialiased">
           {renderRoute()}
@@ -1797,11 +1804,14 @@ const AdminLayout = ({ children }) => {
              </>
            )}
         </header>
-        <div className="min-w-0 grow overflow-y-auto p-4 sm:p-8">
-           <div className="max-w-6xl mx-auto">
+         <PullToRefresh
+           className="p-4 sm:p-8"
+           onRefresh={() => window.dispatchEvent(new CustomEvent('wen:admin-refresh'))}
+         >
+           <div className="mx-auto max-w-6xl">
              {children}
            </div>
-        </div>
+         </PullToRefresh>
       </main>
     </div>
   );
@@ -1864,6 +1874,7 @@ const AdminDashboard = () => {
     };
 
     loadDashboard();
+    window.addEventListener('wen:admin-refresh', loadDashboard);
     const dashboardChannel = supabase
       .channel(`admin-dashboard-${Date.now()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, loadDashboard)
@@ -1872,6 +1883,7 @@ const AdminDashboard = () => {
 
     return () => {
       active = false;
+      window.removeEventListener('wen:admin-refresh', loadDashboard);
       supabase.removeChannel(dashboardChannel);
     };
   }, []);
@@ -1986,6 +1998,7 @@ const AdminProducts = () => {
 
   const handleDelete = async (product) => {
     setDeletingProductId(product.id);
+    void triggerLightHaptic();
     try {
       const result = await deleteProduct(product);
       if (result?.storageWarning) {
@@ -1993,6 +2006,7 @@ const AdminProducts = () => {
       } else {
         toast.success('Product and its images were deleted completely.');
       }
+      void triggerSuccessHaptic();
     } catch (error) {
       const message = error.message || 'Unable to delete this product.';
       if (/foreign key|referenced|violates/i.test(message)) {

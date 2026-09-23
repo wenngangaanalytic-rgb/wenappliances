@@ -287,6 +287,7 @@ export default function AdminProductChat() {
     };
 
     loadThreads();
+    window.addEventListener('wen:admin-refresh', loadThreads);
 
     const channel = supabase
       .channel(`admin-product-chat-${Date.now()}`)
@@ -299,6 +300,7 @@ export default function AdminProductChat() {
 
     return () => {
       active = false;
+      window.removeEventListener('wen:admin-refresh', loadThreads);
       supabase.removeChannel(channel);
     };
   }, []);
@@ -586,7 +588,7 @@ export default function AdminProductChat() {
                 <div ref={messagesEndRef} />
               </div>
 
-              <form onSubmit={sendReply} className="admin-product-chat__composer shrink-0 border-t border-stone-200 bg-white p-3 sm:p-4">
+              <form onSubmit={sendReply} className="admin-product-chat__composer shrink-0 border-t border-stone-200 bg-white p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:p-4">
                 <label htmlFor="admin-product-chat-reply" className="sr-only">Reply to customer</label>
                 <div className="flex items-end gap-2 rounded-[1.5rem] bg-stone-100 p-1.5">
                   <textarea

@@ -19,6 +19,7 @@ import {
 import toast from 'react-hot-toast';
 import { supabase } from './supabaseClient';
 import { downloadReceiptPdf, getReceiptItems, getReceiptStatusLabel } from './receiptPdf';
+import { triggerLightHaptic, triggerSuccessHaptic } from './nativeAdmin';
 
 const STATUS_OPTIONS = [
   { value: 'Pending', label: 'Pending' },
@@ -157,6 +158,7 @@ export default function AdminOrders() {
     };
 
     fetchOrders();
+    window.addEventListener('wen:admin-refresh', fetchOrders);
 
     const refreshTimer = window.setInterval(() => fetchOrders(true), 10000);
     const ordersChannel = supabase
@@ -166,6 +168,7 @@ export default function AdminOrders() {
 
     return () => {
       active = false;
+      window.removeEventListener('wen:admin-refresh', fetchOrders);
       window.clearInterval(refreshTimer);
       supabase.removeChannel(ordersChannel);
     };
@@ -200,6 +203,7 @@ export default function AdminOrders() {
 
     const previousOrders = orders;
     setUpdatingOrderId(orderId);
+    void triggerLightHaptic();
     setOrders((current) => normalizedNewStatus === 'Cancelled'
       ? current.filter((order) => order.id !== orderId)
       : current.map((order) => order.id === orderId ? { ...order, status: normalizedNewStatus } : order));
@@ -229,8 +233,10 @@ export default function AdminOrders() {
           return next;
         });
         toast.success('Order cancelled, stock restored, and removed from the list.');
+        void triggerSuccessHaptic();
       } else {
         toast.success(`Order updated: ${statusLabel(normalizedNewStatus, currentOrder?.fulfillment_method)}.`);
+        void triggerSuccessHaptic();
       }
     }
 

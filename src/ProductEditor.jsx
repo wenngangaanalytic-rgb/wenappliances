@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { Camera as CameraIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { Capacitor } from '@capacitor/core';
+import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { supabase } from './supabaseClient';
+import { triggerLightHaptic } from './nativeAdmin';
 
 const initialForm = {
   name: '',
@@ -28,6 +32,7 @@ export default function ProductEditor({ onSaved }) {
   const [isDragActive, setIsDragActive] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [isNativePhotoLoading, setIsNativePhotoLoading] = useState(false);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -42,7 +47,7 @@ export default function ProductEditor({ onSaved }) {
     setFormData((current) => ({ ...current, [name]: value }));
   };
 
-  const handleFiles = (fileList) => {
+  const handleFiles = (fileList, append = false) => {
     const files = Array.from(fileList ?? []);
     const invalidFile = files.find((file) => !ALLOWED_IMAGE_TYPES.has(file.type) || file.size > MAX_IMAGE_SIZE_BYTES);
 
@@ -58,14 +63,48 @@ export default function ProductEditor({ onSaved }) {
       return;
     }
 
-    setSelectedFiles(files);
-    setCoverIndex(0);
+    setSelectedFiles(append ? [...selectedFiles, ...files] : files);
+    if (!append || selectedFiles.length === 0) setCoverIndex(0);
     setError('');
     setSuccessMessage('');
   };
 
   const handleFileChange = (event) => {
     handleFiles(event.target.files);
+  };
+
+  const handleNativePhoto = async () => {
+    if (!Capacitor.isNativePlatform() || isNativePhotoLoading) return;
+
+    setIsNativePhotoLoading(true);
+    void triggerLightHaptic();
+    try {
+      const photo = await Camera.getPhoto({
+        source: CameraSource.Prompt,
+        resultType: CameraResultType.Uri,
+        quality: 90,
+        correctOrientation: true,
+        saveToGallery: false
+      });
+      const photoUrl = photo.webPath || photo.path;
+      if (!photoUrl) throw new Error('The selected photo could not be read.');
+
+      const response = await fetch(photoUrl);
+      if (!response.ok) throw new Error('The selected photo could not be read.');
+      const blob = await response.blob();
+      const type = blob.type || `image/${photo.format || 'jpeg'}`;
+      const extension = type.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
+      const file = new File([blob], `appliance-${Date.now()}.${extension}`, { type });
+      handleFiles([file], true);
+    } catch (photoError) {
+      if (!/cancel|dismiss|abort/i.test(photoError?.message || '')) {
+        const message = photoError?.message || 'Unable to open the camera or gallery.';
+        setError(message);
+        toast.error(message);
+      }
+    } finally {
+      setIsNativePhotoLoading(false);
+    }
   };
 
   const handleDrop = (event) => {
@@ -206,6 +245,12 @@ export default function ProductEditor({ onSaved }) {
 
         <div>
           <label htmlFor="product-images" className="mb-2 block text-sm font-semibold">Product images</label>
+          {Capacitor.isNativePlatform() && (
+            <button type="button" onClick={handleNativePhoto} disabled={isNativePhotoLoading} className="mb-3 inline-flex items-center gap-2 rounded-lg border border-[#9C6644] bg-[#9C6644]/10 px-3 py-2 text-sm font-semibold text-[#F1F3EF] transition hover:bg-[#9C6644]/20 disabled:cursor-not-allowed disabled:opacity-60">
+              <CameraIcon className="h-4 w-4" aria-hidden="true" />
+              {isNativePhotoLoading ? 'Opening camera...' : 'Take photo or choose from gallery'}
+            </button>
+          )}
           <label
             htmlFor="product-images"
             onDragOver={(event) => {
