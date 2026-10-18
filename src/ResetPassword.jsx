@@ -91,7 +91,7 @@ export default function ResetPassword({ navigate }) {
         </div>
 
         {checkingSession ? <div className="mt-8 flex items-center gap-2 text-sm text-[#4A5568]"><LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> Checking your secure reset link...</div> : !hasRecoverySession ? (
-          <div className="mt-8 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div className="mt-8 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
             This reset link is missing or has expired. Request a new one from the account menu.
           </div>
         ) : (

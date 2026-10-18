@@ -149,7 +149,7 @@ export default function NativeAdminController({ active, currentRoute, theme }) {
 
   return (
     <div className="pointer-events-none fixed inset-x-0 top-0 z-[250] flex justify-center px-3 pt-[env(safe-area-inset-top)]" role="status" aria-live="polite">
-      <div className={`pointer-events-auto mt-2 flex max-w-xl flex-wrap items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold text-white shadow-lg ${connectionStatus === 'offline' ? 'border-red-300 bg-red-800' : 'border-amber-300 bg-amber-800'}`}>
+      <div className={`pointer-events-auto mt-2 flex max-w-xl flex-wrap items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold text-white shadow-lg ${connectionStatus === 'offline' ? 'border-red-300 bg-red-800' : 'border-[#C08457] bg-[#70442D]'}`}>
         {connectionStatus === 'offline' ? <WifiOff className="h-4 w-4 shrink-0" aria-hidden="true" /> : <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />}
         <span>{connectionStatus === 'offline' ? 'No internet connection' : 'Supabase is temporarily unreachable'}</span>
         <button type="button" onClick={() => void checkSupabaseConnection(true)} disabled={isRetrying} className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-white/30 px-2.5 hover:bg-white/10 disabled:opacity-60">

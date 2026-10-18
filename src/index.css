@@ -168,6 +168,47 @@ html[data-theme='light'] [class*="text-purple-300"] { color: #6b3a86 !important;
 html[data-theme='light'] [class*="text-emerald-300"] { color: #176b4f !important; }
 html[data-theme='light'] [class*="text-red-300"] { color: #8a2430 !important; }
 
+/* Warm brand-toned notices stay readable in both themes. */
+.wen-warning-panel {
+  border-color: #c08457;
+  background: #f5eee9;
+  color: #5b3829;
+}
+
+.wen-warning-muted {
+  color: #704b38;
+}
+
+.wen-warning-badge {
+  border: 1px solid #c08457;
+  background: #f5eee9;
+  color: #70442d;
+}
+
+.wen-warning-foreground {
+  color: #7c4b2f;
+}
+
+html[data-theme='dark'] .wen-warning-panel {
+  border-color: #9c6644;
+  background: #2b211b;
+  color: #f1f3ef;
+}
+
+html[data-theme='dark'] .wen-warning-muted {
+  color: #d5b9a3;
+}
+
+html[data-theme='dark'] .wen-warning-badge {
+  border-color: #9c6644;
+  background: #33261e;
+  color: #f1d8c4;
+}
+
+html[data-theme='dark'] .wen-warning-foreground {
+  color: #d2a17e;
+}
+
 /* Muted, readable order statuses in the admin controls. */
 .order-status-select {
   color-scheme: dark;
@@ -178,7 +219,7 @@ html[data-theme='light'] [class*="text-red-300"] { color: #8a2430 !important; }
   color: #f1f3ef !important;
 }
 
-html[data-theme='dark'] .order-status-select.order-status-pending { background: #3d3524 !important; border-color: #7a6235 !important; color: #f1cc80 !important; }
+html[data-theme='dark'] .order-status-select.order-status-pending { background: #2b211b !important; border-color: #9c6644 !important; color: #f1d8c4 !important; }
 html[data-theme='dark'] .order-status-select.order-status-confirmed { background: #243d34 !important; border-color: #3b7c65 !important; color: #aee2cc !important; }
 html[data-theme='dark'] .order-status-select.order-status-completed { background: #29384a !important; border-color: #4b6e8f !important; color: #b9d6f3 !important; }
 html[data-theme='dark'] .order-status-select.order-status-cancelled { background: #3f2a2e !important; border-color: #83515b !important; color: #f0bbc4 !important; }
@@ -192,7 +233,7 @@ html[data-theme='light'] .order-status-option {
   color: #111214 !important;
 }
 
-html[data-theme='light'] .order-status-select.order-status-pending { background: #f4ead4 !important; border-color: #d1b06d !important; color: #775112 !important; }
+html[data-theme='light'] .order-status-select.order-status-pending { background: #f5eee9 !important; border-color: #c08457 !important; color: #5b3829 !important; }
 html[data-theme='light'] .order-status-select.order-status-confirmed { background: #e1f0e9 !important; border-color: #86b99f !important; color: #275f48 !important; }
 html[data-theme='light'] .order-status-select.order-status-completed { background: #e1ebf5 !important; border-color: #92adc9 !important; color: #31506b !important; }
 html[data-theme='light'] .order-status-select.order-status-cancelled { background: #f6e3e6 !important; border-color: #d0a1aa !important; color: #7d303b !important; }
