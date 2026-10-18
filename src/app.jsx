@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useMemo, useReducer, useRef, useCallback } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useContext, useMemo, useReducer, useRef, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { 
   ShoppingCart, Search, Menu, X, User, ChevronRight, 
@@ -8,18 +8,19 @@ import {
   Printer, Download, ImagePlus, Moon, Sun, GripVertical, Star, MessagesSquare
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
-import SecureAdminLogin from './AdminLogin';
-import SecureProductEditor from './ProductEditor';
+const SecureAdminLogin = lazy(() => import('./AdminLogin'));
+const SecureProductEditor = lazy(() => import('./ProductEditor'));
 import LiveApplianceCatalog from './ApplianceCatalog';
-import Checkout from './Checkout';
-import OrderTracking from './OrderTracking';
-import SupabaseAdminOrders from './AdminOrders';
-import SupabaseAdminMembers from './AdminMembers';
-import AdminTools from './AdminTools';
-import AdminProductChat from './AdminProductChat';
+const Checkout = lazy(() => import('./Checkout'));
+const TermsAndConditions = lazy(() => import('./TermsAndConditions'));
+const OrderTracking = lazy(() => import('./OrderTracking'));
+const SupabaseAdminOrders = lazy(() => import('./AdminOrders'));
+const SupabaseAdminMembers = lazy(() => import('./AdminMembers'));
+const AdminTools = lazy(() => import('./AdminTools'));
+const AdminProductChat = lazy(() => import('./AdminProductChat'));
 import AccountMenu from './AccountMenu';
-import ResetPassword from './ResetPassword';
-import ProductChatWidget from './ProductChatWidget';
+const ResetPassword = lazy(() => import('./ResetPassword'));
+const ProductChatWidget = lazy(() => import('./ProductChatWidget'));
 import { ChatNotificationBell, ChatNotificationProvider } from './ChatNotifications';
 import PresenceTracker from './PresenceTracker';
 import OrderNotificationPrompt from './OrderNotificationPrompt';
@@ -204,6 +205,17 @@ const RouteSeo = ({ currentRoute, products }) => {
     );
   }
 
+  if (currentRoute === '/terms') {
+    return (
+      <SEO
+        title="Terms and Conditions | Wen Appliances"
+        description="Read the terms for using the Wen Appliances website, placing orders, delivery, pickup and product support."
+        canonicalPath="/terms"
+        type="website"
+      />
+    );
+  }
+
   const productMatch = currentRoute.match(/^\/product\/([^/]+)$/);
   if (productMatch) {
     let productId = productMatch[1];
@@ -367,21 +379,22 @@ export default function App() {
     setProductsLoading(true);
     setProductsError('');
 
-    const { data, error } = await supabase
-      .from('products')
-      // Keep this projection aligned with the production products table.
-      // Catalog status is derived by normalizeProduct from stock because the
-      // current schema does not include a products.status column.
-      .select('id, name, category, price, stock, images, description');
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        // Keep this projection aligned with the production products table.
+        // Catalog status is derived by normalizeProduct from stock because the
+        // current schema does not include a products.status column.
+        .select('id, name, category, price, stock, images, description');
 
-    if (error) {
-      setProducts([]);
-      setProductsError(error.message);
-    } else {
+      if (error) throw error;
       setProducts((data ?? []).map(normalizeProduct));
+    } catch (error) {
+      setProducts([]);
+      setProductsError(error?.message || 'Unable to load products. Please try again.');
+    } finally {
+      setProductsLoading(false);
     }
-
-    setProductsLoading(false);
   }, []);
 
   useEffect(() => {
@@ -550,9 +563,13 @@ export default function App() {
     // The admin deployment has its own root and routes. The storefront never renders admin UI.
     if (isAdminApp) {
       if (!user || user.role !== 'SUPER_ADMIN') {
-        return <SecureAdminLogin theme={theme} toggleTheme={toggleTheme} onAuthenticated={() => navigate('/dashboard')} onClose={() => navigate('/')} />;
+        return (
+          <Suspense fallback={<AdminRouteLoading />}>
+            <SecureAdminLogin theme={theme} toggleTheme={toggleTheme} onAuthenticated={() => navigate('/dashboard')} onClose={() => navigate('/')} />
+          </Suspense>
+        );
       }
-      return <AdminLayout><AdminRouteErrorBoundary key={currentRoute}><AdminRouter route={currentRoute} /></AdminRouteErrorBoundary></AdminLayout>;
+      return <AdminLayout><AdminRouteErrorBoundary key={currentRoute}><Suspense fallback={<AdminRouteLoading />}><AdminRouter route={currentRoute} /></Suspense></AdminRouteErrorBoundary></AdminLayout>;
     }
 
     // Legacy admin URLs on the storefront are intentionally not exposed.
@@ -562,15 +579,30 @@ export default function App() {
     return (
       <StoreLayout>
         {currentRoute === '/' && <StoreHome />}
-        {currentRoute === '/products' && <LiveApplianceCatalog onProductClick={(productId) => navigate(`/product/${productId}`)} />}
+        {currentRoute === '/products' && (
+          <LiveApplianceCatalog
+            products={products}
+            loading={productsLoading}
+            error={productsError}
+            onRetry={loadProducts}
+            onProductClick={(productId) => navigate(`/product/${productId}`)}
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            activeCategory={activeCategory || 'All'}
+            onActiveCategoryChange={(category) => setActiveCategory(category === 'All' ? '' : category)}
+          />
+        )}
         {currentRoute.startsWith('/product/') && <StoreProductDetail id={currentRoute.split('/')[2]} />}
-        {currentRoute === '/checkout' && <Checkout cart={cart} cartTotal={cartTotal} clearCart={clearCart} navigate={navigate} onOrderPlaced={({ orderId, email, trackingToken }) => {
-          rememberOrderForNotifications(orderId, email, trackingToken);
-          setTrackingPrefill({ orderId, email, trackingToken });
-        }} />}
-        {currentRoute === '/reset-password' && <ResetPassword navigate={navigate} />}
-        {currentRoute === '/my-orders' && <OrderTracking initialValues={{ email: user?.email || '' }} accountMode />}
-        {currentRoute.startsWith('/track-order') && <OrderTracking initialValues={{ email: trackingPrefill?.email || user?.email || '', trackingToken: trackingPrefill?.trackingToken || '' }} />}
+        <Suspense fallback={<StoreRouteLoading />}>
+          {currentRoute === '/checkout' && <Checkout cart={cart} cartTotal={cartTotal} clearCart={clearCart} navigate={navigate} onOrderPlaced={({ orderId, email, trackingToken }) => {
+            rememberOrderForNotifications(orderId, email, trackingToken);
+            setTrackingPrefill({ orderId, email, trackingToken });
+          }} />}
+          {currentRoute === '/terms' && <TermsAndConditions />}
+          {currentRoute === '/reset-password' && <ResetPassword navigate={navigate} />}
+          {currentRoute === '/my-orders' && <OrderTracking initialValues={{ email: user?.email || '' }} accountMode />}
+          {currentRoute.startsWith('/track-order') && <OrderTracking initialValues={{ email: trackingPrefill?.email || user?.email || '', trackingToken: trackingPrefill?.trackingToken || '' }} />}
+        </Suspense>
       </StoreLayout>
     );
   };
@@ -581,7 +613,7 @@ export default function App() {
         <PushNotificationRegistration user={user} active={!isAdminApp || user?.role === 'SUPER_ADMIN'} />
         <NativeAdminController active={isAdminApp} currentRoute={currentRoute} theme={theme} />
         <RouteSeo currentRoute={currentRoute} products={products} />
-        <div className="min-h-screen font-sans bg-[#F4F3EF] text-[#111214] antialiased">
+        <div className={isAdminApp ? 'min-h-screen font-sans bg-[#F4F3EF] text-[#111214] antialiased' : 'storefront-shell min-h-screen font-sans antialiased'}>
           {renderRoute()}
         </div>
         <OrderNotificationPrompt isAdmin={isAdminApp} active={!isAdminApp || user?.role === 'SUPER_ADMIN'} />
@@ -692,23 +724,23 @@ const StoreLayout = ({ children }) => {
   };
 
   return (
-    <div className="flex flex-col min-h-screen">
-      <header className="sticky top-0 z-40 bg-[#F4F3EF]/90 backdrop-blur-md border-b border-[#E5E4E0]">
-        <div className="mx-auto flex h-16 min-w-0 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+    <div className="store-layout flex min-h-screen flex-col">
+      <header className="store-header sticky top-0 z-40 border-b backdrop-blur-md">
+        <div className="store-header__inner mx-auto flex h-16 min-w-0 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-8">
-            <div onClick={() => handleNav('/', true)} className="cursor-pointer">
+            <button type="button" onClick={() => handleNav('/', true)} className="store-brand-button" aria-label="Wen Appliances home">
               <Logo />
-            </div>
-            <nav className="hidden md:flex gap-6 text-sm font-medium text-[#4A5568]">
-              <button onClick={() => handleNav('/', true)} className="hover:text-[#111214] transition-colors">Home</button>
-              <button onClick={() => handleNav('/products', true)} className="hover:text-[#111214] transition-colors">All Products</button>
-              <button onClick={() => navigate('/track-order')} className="hover:text-[#111214] transition-colors">Track Order</button>
-              <button onClick={() => setIsContactOpen(true)} className="hover:text-[#111214] transition-colors">Support</button>
+            </button>
+            <nav aria-label="Main navigation" className="store-desktop-nav hidden md:flex gap-5 text-sm font-medium">
+              <button type="button" onClick={() => handleNav('/', true)} className="store-nav-link">Home</button>
+              <button type="button" onClick={() => handleNav('/products', true)} className="store-nav-link">All products</button>
+              <button type="button" onClick={() => navigate('/track-order')} className="store-nav-link">Track order</button>
+              <button type="button" onClick={() => setIsContactOpen(true)} className="store-nav-link">Support</button>
             </nav>
           </div>
           
           <div className="flex min-w-0 items-center gap-2 sm:gap-4">
-            <div className="relative hidden md:block">
+            <div className="store-header-search relative hidden md:block">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#858884]" />
               <input 
                 type="text" 
@@ -723,7 +755,8 @@ const StoreLayout = ({ children }) => {
                   }
                   if (e.key === 'Escape') setIsSearchOpen(false);
                 }}
-                className="pl-10 pr-4 py-2 bg-white border border-[#E5E4E0] rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-[#9C6644]/50 w-64 transition-all"
+                aria-label="Search appliances"
+                className="store-search-input pl-10 pr-4 py-2 w-64 text-sm"
               />
               {isSearchOpen && searchSuggestions.length > 0 && (
                 <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-xl border border-[#E5E4E0] bg-white py-1 shadow-xl" role="listbox" aria-label="Search suggestions">
@@ -756,8 +789,9 @@ const StoreLayout = ({ children }) => {
             
             <button 
               onClick={() => setIsCartOpen(true)}
-              className="relative rounded-full p-2 transition-colors hover:bg-[#E5E4E0]"
-              aria-label="Open shopping cart"
+              type="button"
+              className="store-icon-button relative"
+              aria-label={cartItemCount > 0 ? `Open shopping cart, ${cartItemCount} items` : 'Open shopping cart'}
             >
               <ShoppingCart className="h-5 w-5 text-[#4A5568]" />
               {cartItemCount > 0 && (
@@ -771,7 +805,7 @@ const StoreLayout = ({ children }) => {
             <button
               type="button"
               onClick={() => setIsMobileMenuOpen((open) => !open)}
-              className="inline-flex items-center justify-center rounded-full border border-[#E5E4E0] bg-white p-2 text-[#4A5568] transition hover:border-[#9C6644] hover:text-[#9C6644] md:hidden"
+              className="store-icon-button md:hidden"
               aria-label={isMobileMenuOpen ? 'Close storefront menu' : 'Open storefront menu'}
               aria-expanded={isMobileMenuOpen}
               aria-controls="storefront-mobile-menu"
@@ -789,7 +823,7 @@ const StoreLayout = ({ children }) => {
               className="fixed inset-x-0 bottom-0 top-16 z-[45] bg-black/25 backdrop-blur-[1px] md:hidden"
               aria-label="Close storefront menu"
             />
-            <div id="storefront-mobile-menu" className="fixed inset-x-3 top-[4.5rem] z-[50] max-h-[calc(100dvh-5.5rem)] overflow-y-auto rounded-2xl border border-[#E5E4E0] bg-[#F4F3EF] p-3 text-left shadow-2xl md:hidden">
+            <div id="storefront-mobile-menu" className="store-mobile-menu fixed inset-x-3 top-[4.5rem] z-[50] max-h-[calc(100dvh-5.5rem)] overflow-y-auto rounded-2xl border p-3 text-left md:hidden">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#858884]" aria-hidden="true" />
                 <input
@@ -806,7 +840,7 @@ const StoreLayout = ({ children }) => {
                     }
                     if (event.key === 'Escape') setIsSearchOpen(false);
                   }}
-                  className="w-full rounded-xl border border-[#E5E4E0] bg-white py-3 pl-10 pr-3 text-sm outline-none transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20"
+                  className="store-search-input w-full py-3 pl-10 pr-3 text-sm"
                 />
                 {isSearchOpen && searchSuggestions.length > 0 && (
                   <div className="absolute left-0 right-0 top-full z-10 mt-2 overflow-hidden rounded-xl border border-[#E5E4E0] bg-white py-1 shadow-xl" role="listbox" aria-label="Search suggestions">
@@ -853,80 +887,77 @@ const StoreLayout = ({ children }) => {
       
       <main className="grow">
         {productsLoading && (
-          <div className="bg-[#111214] text-white px-4 py-3 text-center text-sm">
+          <div className="store-load-banner px-4 py-3 text-center text-sm" role="status">
             Loading the live appliance catalog...
           </div>
         )}
         {productsError && (
-          <div className="bg-red-50 border-b border-red-200 text-red-800 px-4 py-3 text-center text-sm">
-            <span>We could not load products from Supabase: {productsError}</span>
-            <button onClick={loadProducts} className="ml-3 font-semibold underline">Try again</button>
+          <div className="store-error-banner px-4 py-3 text-center text-sm" role="alert">
+            <span>We couldn’t load the live appliance catalog. Please try again.</span>
+            <button type="button" onClick={loadProducts} className="ml-3 font-semibold underline">Try again</button>
           </div>
         )}
         {children}
       </main>
       
-      <footer className="bg-[#111214] text-[#F1F1EF] py-12 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-4 gap-8">
+      <footer className="store-footer mt-auto py-12">
+        <div className="store-footer__grid mx-auto grid max-w-7xl grid-cols-1 gap-8 px-4 sm:px-6 md:grid-cols-4 lg:px-8">
           <div>
             <div className="mb-4 block text-left" aria-label="WenAppliances">
-              <Logo dark={true} />
+              <Logo />
             </div>
-            <p className="text-[#B8BAB7] text-sm leading-relaxed">Shop refrigerators, washers, dryers, and household appliances with clear pricing, delivery options, and direct support.</p>
+            <p className="store-footer__copy text-sm leading-relaxed">Shop refrigerators, washers, dryers, and household appliances with clear pricing, delivery options, and direct support.</p>
           </div>
           <div>
-            <h3 className="font-semibold mb-4 text-[#F1F1EF]">Shop</h3>
-            <ul className="space-y-2 text-sm text-[#B8BAB7]">
-              <li><button onClick={() => navigate('/products')} className="hover:text-white transition-colors">All Products</button></li>
-              <li><button onClick={() => navigate('/products')} className="hover:text-white transition-colors">Shop by Category</button></li>
-              <li><button onClick={() => navigate('/products')} className="hover:text-white transition-colors">Compare Appliances</button></li>
+            <h3 className="store-footer__title mb-4 font-semibold">Shop</h3>
+            <ul className="store-footer__links space-y-2 text-sm">
+              <li><button type="button" onClick={() => navigate('/products')}>All products</button></li>
+              <li><button type="button" onClick={() => navigate('/products')}>Browse categories</button></li>
             </ul>
           </div>
           <div>
-            <h3 className="font-semibold mb-4 text-[#F1F1EF]">Support</h3>
-            <ul className="space-y-2 text-sm text-[#B8BAB7]">
-              <li><button onClick={() => setIsContactOpen(true)} className="hover:text-white transition-colors">Contact Us</button></li>
-              <li><button onClick={() => navigate('/track-order')} className="hover:text-white transition-colors">Track Order</button></li>
+            <h3 className="store-footer__title mb-4 font-semibold">Support</h3>
+            <ul className="store-footer__links space-y-2 text-sm">
+              <li><button type="button" onClick={() => setIsContactOpen(true)}>Contact us</button></li>
+              <li><button type="button" onClick={() => navigate('/track-order')}>Track order</button></li>
+              <li><button type="button" onClick={() => navigate('/terms')}>Terms and conditions</button></li>
             </ul>
           </div>
           <div>
-            <h3 className="font-semibold mb-4 text-[#F1F1EF]">Newsletter</h3>
-            <p className="text-[#B8BAB7] text-sm mb-4">Subscribe for updates on new arrivals and offers.</p>
-            <form onSubmit={handleNewsletterSubmit} className="flex">
+            <h3 className="store-footer__title mb-4 font-semibold">Newsletter</h3>
+            <p className="store-footer__copy mb-4 text-sm">Subscribe for updates on new arrivals and offers.</p>
+            <form onSubmit={handleNewsletterSubmit} className="store-newsletter-form flex">
               <label htmlFor="newsletter-email" className="sr-only">Email address</label>
-              <input id="newsletter-email" type="email" required value={newsletterEmail} onChange={(event) => { setNewsletterEmail(event.target.value); setNewsletterMessage(''); }} placeholder="Email address" className="min-w-0 bg-[#1D2023] border border-[#24272A] px-3 py-2 rounded-l-md text-sm w-full focus:outline-none focus:border-[#9C6644]" />
-              <button type="submit" className="shrink-0 bg-[#9C6644] hover:bg-[#8A5A3C] text-white px-4 py-2 rounded-r-md text-sm font-medium transition-colors">Subscribe</button>
+              <input id="newsletter-email" type="email" required value={newsletterEmail} onChange={(event) => { setNewsletterEmail(event.target.value); setNewsletterMessage(''); }} placeholder="Email address" className="store-search-input min-w-0 w-full rounded-r-none px-3 py-2 text-sm" />
+              <button type="submit" className="store-button-primary shrink-0 rounded-l-none px-4 text-sm font-medium">Subscribe</button>
             </form>
             {newsletterMessage && <p className="mt-2 text-xs font-medium text-[#D8B49A]" role="status" aria-live="polite">{newsletterMessage}</p>}
           </div>
         </div>
         
-        {/* Watermark Section */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12 pt-8 border-t border-[#24272A] flex flex-col md:flex-row items-center justify-between text-sm text-[#858884]">
-          <p>&copy; 2026 WenAppliances. All rights reserved.</p>
-          <p className="mt-4 md:mt-0 font-medium tracking-wide text-[#9C6644] flex items-center gap-2">
-            @gikunju creates
-          </p>
+        <div className="store-footer__legal mx-auto mt-10 flex max-w-7xl flex-col items-start justify-between gap-3 border-t px-4 pt-6 text-sm sm:px-6 md:flex-row md:items-center lg:px-8">
+          <p>&copy; {new Date().getFullYear()} Wen Appliances. All rights reserved.</p>
+          <a className="store-portfolio-link" href="https://gikunjucreates.work.gd/" target="_blank" rel="noopener noreferrer">@gikunju creates</a>
         </div>
       </footer>
 
       {/* Contact Modal */}
       {isContactOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setIsContactOpen(false)}>
-          <div className="bg-white rounded-xl p-6 md:p-8 max-w-md w-full relative shadow-2xl" onClick={e => e.stopPropagation()}>
-            <button onClick={() => {setIsContactOpen(false); setContactSent(false);}} className="absolute top-4 right-4 text-[#858884] hover:text-[#111214]"><X className="h-5 w-5" /></button>
+        <div className="store-dialog-backdrop fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setIsContactOpen(false)}>
+          <div className="store-contact-dialog relative w-full max-w-md rounded-xl p-6 md:p-8" role="dialog" aria-modal="true" aria-labelledby="contact-dialog-title" onClick={e => e.stopPropagation()}>
+            <button type="button" onClick={() => {setIsContactOpen(false); setContactSent(false);}} className="store-dialog-close" aria-label="Close contact dialog"><X className="h-5 w-5" /></button>
             
             {contactSent ? (
               <div className="text-center py-8">
                 <CheckCircle2 className="h-16 w-16 text-green-500 mx-auto mb-4" />
-                <h3 className="text-xl font-bold mb-2 text-[#111214]">Message Sent</h3>
+                <h3 id="contact-dialog-title" className="text-xl font-bold mb-2 text-[#111214]">Message sent</h3>
                   <p className="text-[#4A5568]">Your message has been successfully sent to {SUPPORT_EMAIL}. We'll get back to you shortly.</p>
               </div>
             ) : (
               <>
-                <h3 className="text-2xl font-bold mb-6 text-[#111214]">Contact Support</h3>
+                <h3 id="contact-dialog-title" className="text-2xl font-bold mb-6 text-[#111214]">Contact support</h3>
                 
-                <div className="mb-6 p-4 bg-[#F4F3EF] rounded-lg border border-[#E5E4E0] text-sm text-[#4A5568] space-y-2 text-left">
+                <div className="store-contact-details mb-6 space-y-2 rounded-lg p-4 text-left text-sm">
                   <p className="font-medium text-[#111214]">Direct Contact Information:</p>
                   <p>Email: <a href={`mailto:${SUPPORT_EMAIL}`} className="text-[#9C6644] hover:underline">{SUPPORT_EMAIL}</a></p>
                   <p>Phone: {SUPPORT_PHONE}</p>
@@ -935,17 +966,17 @@ const StoreLayout = ({ children }) => {
                 <form onSubmit={handleContactSubmit} className="space-y-4 text-left">
                   <div>
                     <label htmlFor="contact-name" className="block text-sm font-medium text-[#4A5568] mb-1">Name</label>
-                    <input id="contact-name" type="text" required maxLength={120} value={contactForm.name} onChange={(event) => setContactForm((current) => ({ ...current, name: event.target.value }))} className="w-full border border-[#E5E4E0] rounded-lg px-4 py-2 text-[#111214] focus:ring-2 focus:ring-[#9C6644]/50 focus:border-[#9C6644] outline-none" />
+                    <input id="contact-name" type="text" required maxLength={120} autoComplete="name" value={contactForm.name} onChange={(event) => setContactForm((current) => ({ ...current, name: event.target.value }))} className="store-input w-full rounded-lg px-4 py-2.5" />
                   </div>
                   <div>
                     <label htmlFor="contact-email" className="block text-sm font-medium text-[#4A5568] mb-1">Email</label>
-                    <input id="contact-email" type="email" required maxLength={320} value={contactForm.email} onChange={(event) => setContactForm((current) => ({ ...current, email: event.target.value }))} className="w-full border border-[#E5E4E0] rounded-lg px-4 py-2 text-[#111214] focus:ring-2 focus:ring-[#9C6644]/50 focus:border-[#9C6644] outline-none" />
+                    <input id="contact-email" type="email" required maxLength={254} autoComplete="email" value={contactForm.email} onChange={(event) => setContactForm((current) => ({ ...current, email: event.target.value }))} className="store-input w-full rounded-lg px-4 py-2.5" />
                   </div>
                   <div>
                     <label htmlFor="contact-message" className="block text-sm font-medium text-[#4A5568] mb-1">Message</label>
-                    <textarea id="contact-message" rows={4} required maxLength={5000} value={contactForm.message} onChange={(event) => setContactForm((current) => ({ ...current, message: event.target.value }))} className="w-full border border-[#E5E4E0] rounded-lg px-4 py-2 text-[#111214] focus:ring-2 focus:ring-[#9C6644]/50 focus:border-[#9C6644] outline-none resize-none"></textarea>
+                    <textarea id="contact-message" rows={4} required maxLength={5000} value={contactForm.message} onChange={(event) => setContactForm((current) => ({ ...current, message: event.target.value }))} className="store-input w-full resize-y rounded-lg px-4 py-2.5"></textarea>
                   </div>
-                  <button type="submit" disabled={contactLoading} className="w-full bg-[#111214] text-white py-3 rounded-lg font-medium hover:bg-[#24272A] transition-colors mt-4 disabled:cursor-not-allowed disabled:opacity-60">{contactLoading ? 'Sending…' : `Send to ${SUPPORT_EMAIL}`}</button>
+                  <button type="submit" disabled={contactLoading} className="store-button-primary mt-4 w-full px-4 font-medium">{contactLoading ? 'Sending…' : 'Send message'}</button>
                 </form>
               </>
             )}
@@ -965,8 +996,8 @@ const CartDrawer = () => {
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 transition-opacity" onClick={() => setIsCartOpen(false)} />
-      <div className="fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
+      <div className="store-cart-backdrop fixed inset-0 z-50 transition-opacity" onClick={() => setIsCartOpen(false)} />
+      <div className="store-cart-drawer fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col animate-in slide-in-from-right duration-300">
         <div className="flex items-center justify-between p-4 border-b border-[#E5E4E0]">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <ShoppingCart className="h-5 w-5" /> Your Cart
@@ -1042,58 +1073,79 @@ const CartDrawer = () => {
 };
 
 const StoreHome = () => {
-  const { products, navigate, productsLoading } = useContext(AppContext);
+  const { products, navigate, productsLoading, setActiveCategory } = useContext(AppContext);
   const featured = products.filter(p => p.status === 'PUBLISHED').slice(0, 4);
+  const quickCategories = ['Refrigerators', 'Washers', 'Dryers', 'Washer & Dryer'];
+
+  const browseCategory = (category) => {
+    setActiveCategory(category);
+    navigate('/products');
+  };
 
   return (
-    <div>
-      {/* Hero Section */}
-      <section className="motion-fade-in relative bg-[#111214] text-white overflow-hidden">
-        <div className="absolute inset-0 z-0 overflow-hidden">
-           <div className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-[#9C6644]/30 blur-3xl"></div>
-           <div className="absolute -bottom-40 right-1/3 h-96 w-96 rounded-full bg-[#F4F3EF]/10 blur-3xl"></div>
-           <div className="absolute inset-0 bg-linear-to-r from-[#111214] via-[#111214]/95 to-[#9C6644]/20"></div>
-        </div>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 md:py-32 relative z-10">
-          <div className="max-w-xl">
-            <span className="text-[#9C6644] font-bold tracking-wider text-sm uppercase mb-4 block">Appliances in stock today</span>
-            <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-6 leading-tight">Reliable appliances, ready for your home.</h2>
-            <p className="text-lg text-[#B8BAB7] mb-8 leading-relaxed">Shop refrigerators, washers, dryers, and more with clear pricing, delivery options, and support from WenAppliances.</p>
-            <button 
-              onClick={() => navigate('/products')}
-              className="bg-[#9C6644] hover:bg-[#8A5A3C] text-white px-8 py-3 rounded-lg font-medium transition-colors shadow-lg"
-            >
-              Shop the Collection
-            </button>
+    <div className="store-home">
+      <section className="store-hero">
+        <div className="store-hero__inner mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8 lg:py-24">
+          <div className="max-w-2xl">
+            <p className="store-eyebrow mb-4 text-sm font-semibold uppercase tracking-[0.12em]">Wen Appliances · Available now</p>
+            <h1 className="store-hero__title max-w-xl text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl">Find the right appliance for your home.</h1>
+            <p className="store-hero__copy mt-5 max-w-xl text-base leading-7 sm:text-lg">Browse current stock with clear prices, delivery options and direct product support.</p>
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <button type="button" onClick={() => navigate('/products')} className="store-button-primary px-5">Shop all appliances</button>
+              <button type="button" onClick={() => navigate('/track-order')} className="store-button-secondary px-5">Track an order</button>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* Featured Products */}
-      <section className="motion-fade-up max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        <div className="flex justify-between items-end mb-8">
+      <section className="store-category-section mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8" aria-labelledby="browse-category-title">
+        <h2 id="browse-category-title" className="store-section-title text-lg font-semibold">Browse by category</h2>
+        <nav className="mt-4 flex gap-2 overflow-x-auto pb-1" aria-label="Appliance categories">
+          {quickCategories.map((category) => (
+            <button key={category} type="button" onClick={() => browseCategory(category)} className="store-category-link shrink-0 px-4">
+              {category}
+            </button>
+          ))}
+        </nav>
+      </section>
+
+      <section className="store-featured-section mx-auto max-w-7xl px-4 pb-16 pt-8 sm:px-6 lg:px-8" aria-labelledby="featured-products-title">
+        <div className="mb-6 flex items-end justify-between gap-4">
           <div>
-            <h3 className="text-2xl font-bold tracking-tight">Current appliance stock</h3>
-            <p className="text-[#4A5568] mt-1 text-sm">Browse available appliances and recently added products.</p>
+            <h2 id="featured-products-title" className="store-section-title text-2xl font-semibold tracking-tight">Available appliances</h2>
+            <p className="store-muted mt-2 text-sm">A selection from today’s live catalog.</p>
           </div>
-          <button onClick={() => navigate('/products')} className="text-[#9C6644] font-medium text-sm flex items-center hover:underline">
-            View All <ChevronRight className="h-4 w-4 ml-1" />
+          <button type="button" onClick={() => navigate('/products')} className="store-text-link inline-flex min-h-11 items-center gap-1 text-sm font-semibold">
+            View all <ChevronRight className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
-        
-        <div className="motion-stagger grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+
+        <div className="store-product-grid grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {productsLoading ? (
-            <div className="col-span-full py-16 text-center text-[#858884]">Loading products...</div>
+            Array.from({ length: 4 }, (_, index) => <ProductCardSkeleton key={index} />)
           ) : featured.length === 0 ? (
-            <div className="col-span-full py-16 text-center text-[#858884]">Your live catalog is ready for products.</div>
-          ) : featured.map(product => (
-            <ProductCard key={product.id} product={product} />
-          ))}
+            <div className="store-empty-state col-span-full px-6 py-14 text-center">
+              <h3 className="text-lg font-semibold">No in-stock appliances to feature right now</h3>
+              <p className="store-muted mt-2">Browse the full catalog or contact us to ask about upcoming stock.</p>
+              <button type="button" onClick={() => navigate('/products')} className="store-button-secondary mt-5 px-5">Browse catalog</button>
+            </div>
+          ) : featured.map((product) => <ProductCard key={product.id} product={product} />)}
         </div>
       </section>
     </div>
   );
 };
+
+const ProductCardSkeleton = () => (
+  <article className="store-product-card store-product-card--skeleton" aria-hidden="true">
+    <div className="store-skeleton store-product-card__media" />
+    <div className="space-y-3 p-4">
+      <div className="store-skeleton h-3 w-1/3 rounded" />
+      <div className="store-skeleton h-5 w-4/5 rounded" />
+      <div className="store-skeleton h-10 w-full rounded-lg" />
+    </div>
+  </article>
+);
 
 const ProductCard = ({ product }) => {
   const { navigate, addToCart } = useContext(AppContext);
@@ -1101,47 +1153,29 @@ const ProductCard = ({ product }) => {
   const primaryImage = getProductImages(product)[0];
 
   return (
-    <div className="motion-card bg-white rounded-xl shadow-sm border border-[#E5E4E0] overflow-hidden group hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col h-full">
-      <div 
-        className="product-photo-surface relative aspect-square cursor-pointer overflow-hidden bg-[#F4F3EF]"
-        onClick={() => navigate(`/product/${product.id}`)}
-      >
-        {primaryImage ? (
-          <img
-            src={primaryImage}
-            alt={product.name}
-            className="product-photo h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
-          />
-        ) : (
-          <ProductPlaceholder className="w-full h-full" />
-        )}
-        {isOutOfStock && (
-          <div className="absolute top-2 right-2 bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded">
-            Out of Stock
-          </div>
-        )}
-      </div>
-      <div className="p-4 flex flex-col grow">
-        <p className="text-xs text-[#858884] font-medium mb-1 uppercase tracking-wider">{product.category}</p>
-        <h4 
-          onClick={() => navigate(`/product/${product.id}`)}
-          className="font-semibold text-[#111214] mb-2 line-clamp-2 cursor-pointer hover:text-[#9C6644] transition-colors"
-        >
-          {product.name}
-        </h4>
-        <div className="mt-auto flex items-center justify-between">
-          <span className="font-bold text-lg text-[#111214]">{formatMoney(product.price)}</span>
-          <button 
-            onClick={() => addToCart(product.id)}
-            disabled={isOutOfStock}
-            className={`p-2 rounded-full transition-colors ${isOutOfStock ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-[#F4F3EF] text-[#111214] hover:bg-[#9C6644] hover:text-white'}`}
-            title="Add to Cart"
-          >
-            <ShoppingCart className="h-5 w-5" />
-          </button>
+    <article className="store-product-card group flex h-full flex-col overflow-hidden">
+      <button type="button" onClick={() => navigate(`/product/${product.id}`)} className="store-product-card__view text-left" aria-label={`View ${product.name}`}>
+        <div className="store-product-card__media product-photo-surface relative aspect-[4/3] overflow-hidden">
+          {primaryImage ? (
+            <img src={primaryImage} alt={product.name} loading="lazy" decoding="async" className="store-product-card__image product-photo h-full w-full object-cover" />
+          ) : <ProductPlaceholder className="h-full w-full" />}
+          <span className={`store-stock-badge absolute left-3 top-3 ${isOutOfStock ? 'store-stock-badge--out' : ''}`}>
+            {isOutOfStock ? 'Out of stock' : 'In stock'}
+          </span>
         </div>
+        <div className="px-4 pt-4">
+          <p className="store-eyebrow text-xs font-semibold uppercase tracking-wider">{product.category}</p>
+          <h3 className="store-product-card__title mt-1 line-clamp-2 text-base font-semibold">{product.name}</h3>
+          <p className="store-product-card__price mt-3 text-lg font-semibold">{formatMoney(product.price)}</p>
+        </div>
+      </button>
+      <div className="mt-auto px-4 pb-4 pt-4">
+        <button type="button" onClick={() => addToCart(product.id)} disabled={isOutOfStock} className="store-button-secondary store-add-to-cart w-full gap-2 px-3">
+          <ShoppingCart className="h-4 w-4" aria-hidden="true" />
+          {isOutOfStock ? 'Unavailable' : 'Add to cart'}
+        </button>
       </div>
-    </div>
+    </article>
   );
 };
 
@@ -1247,7 +1281,7 @@ const StoreCatalog = () => {
 };
 
 const StoreProductDetail = ({ id }) => {
-  const { products, addToCart, user } = useContext(AppContext);
+  const { products, addToCart, user, navigate } = useContext(AppContext);
   const product = products.find(p => p.id === id);
   const [qty, setQty] = useState(1);
   const [imgIndex, setImgIndex] = useState(0);
@@ -1319,7 +1353,15 @@ const StoreProductDetail = ({ id }) => {
     changeLightboxZoom(event.deltaY < 0 ? 0.25 : -0.25);
   };
 
-  if (!product) return <div className="p-20 text-center">Product not found.</div>;
+  if (!product) {
+    return (
+      <section className="store-empty-state mx-auto my-12 max-w-2xl px-6 py-12 text-center" role="status">
+        <h1 className="text-xl font-semibold">This appliance isn’t available</h1>
+        <p className="store-muted mt-2">It may have been removed or the link may be incorrect.</p>
+        <button type="button" onClick={() => navigate('/products')} className="store-button-primary mt-5 px-5">Back to appliances</button>
+      </section>
+    );
+  }
   const isOutOfStock = product.stock <= 0;
 
   const images = getProductImages(product);
@@ -1335,7 +1377,7 @@ const StoreProductDetail = ({ id }) => {
   };
 
   return (
-    <div className="motion-fade-in max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <section className="store-product-detail mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-10 lg:px-8" aria-labelledby="product-title">
       
       {/* FULLSCREEN MODAL */}
       {isFullscreen && images.length > 0 && (
@@ -1385,37 +1427,44 @@ const StoreProductDetail = ({ id }) => {
         </div>
       )}
 
-      <div className="bg-white rounded-2xl shadow-sm border border-[#E5E4E0] overflow-hidden flex flex-col md:flex-row">
+      <div className="store-product-detail__panel flex flex-col overflow-hidden rounded-2xl md:flex-row">
         {/* Image Gallery area */}
-        <div className="product-photo-surface w-full md:w-1/2 bg-[#F4F3EF] p-8 flex flex-col items-center relative">
+        <div className="store-product-gallery product-photo-surface relative flex w-full flex-col items-center p-4 sm:p-6 md:w-1/2 lg:p-8">
           
           {/* Main Image */}
-          <div 
-            className="relative w-full aspect-square flex items-center justify-center cursor-zoom-in group"
-            onClick={() => images.length > 0 && openFullscreen()}
-          >
+          <div className="relative flex aspect-square w-full items-center justify-center" role="group" aria-label="Product image gallery">
             {images.length > 0 ? (
-              <img
-                key={imgIndex}
-                src={images[imgIndex]}
-                alt={product.name}
-                className="product-photo max-w-full max-h-full object-contain drop-shadow-xl animate-in fade-in duration-500"
-              />
+              <button type="button" onClick={openFullscreen} className="store-gallery-main group flex h-full w-full items-center justify-center" aria-label={`Open full-size image of ${product.name}`}>
+                <img
+                  key={imgIndex}
+                  src={images[imgIndex]}
+                  alt={product.name}
+                  loading={imgIndex === 0 ? 'eager' : 'lazy'}
+                  decoding="async"
+                  fetchPriority={imgIndex === 0 ? 'high' : 'auto'}
+                  className="product-photo h-full w-full object-contain"
+                />
+                <span className="store-gallery-hint">Tap to enlarge</span>
+              </button>
             ) : (
-              <ProductPlaceholder className="w-full h-full rounded-xl" />
+              <ProductPlaceholder className="h-full w-full rounded-xl" />
             )}
             
             {images.length > 1 && (
               <>
                 <button 
+                  type="button"
                   onClick={prevImg}
-                  className="absolute left-2 bg-white/80 backdrop-blur hover:bg-white p-2 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-all duration-300"
+                  aria-label="Previous product image"
+                  className="store-gallery-control absolute left-2"
                 >
                   <ChevronRight className="h-5 w-5 rotate-180 text-black" />
                 </button>
                 <button 
+                  type="button"
                   onClick={nextImg}
-                  className="absolute right-2 bg-white/80 backdrop-blur hover:bg-white p-2 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-all duration-300"
+                  aria-label="Next product image"
+                  className="store-gallery-control absolute right-2"
                 >
                   <ChevronRight className="h-5 w-5 text-black" />
                 </button>
@@ -1425,14 +1474,17 @@ const StoreProductDetail = ({ id }) => {
 
           {/* Thumbnails */}
           {images.length > 1 && (
-            <div className="flex gap-4 mt-6 overflow-x-auto pb-2 w-full justify-center">
+            <div className="mt-4 flex w-full justify-start gap-3 overflow-x-auto pb-2 sm:justify-center" aria-label="Choose product image">
               {images.map((img, idx) => (
                 <button 
                   key={idx}
+                  type="button"
                   onClick={() => setImgIndex(idx)}
-                  className={`w-16 h-16 rounded-md bg-white border-2 overflow-hidden transition-all shrink-0 ${imgIndex === idx ? 'border-[#9C6644] opacity-100 scale-110 shadow-sm' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                  aria-label={`Show product photo ${idx + 1}`}
+                  aria-pressed={imgIndex === idx}
+                  className={`store-gallery-thumbnail h-16 w-16 shrink-0 overflow-hidden rounded-lg ${imgIndex === idx ? 'is-active' : ''}`}
                 >
-                  <img src={img} alt={`${product.name} — photo ${idx + 1}`} className="product-photo h-full w-full object-cover" />
+                  <img src={img} alt="" loading="lazy" decoding="async" className="product-photo h-full w-full object-cover" />
                 </button>
               ))}
             </div>
@@ -1446,41 +1498,46 @@ const StoreProductDetail = ({ id }) => {
         </div>
         
         {/* Product Info */}
-        <div className="w-full md:w-1/2 p-8 lg:p-12 flex flex-col">
-          <p className="text-sm text-[#858884] font-semibold uppercase tracking-wider mb-2">{product.category} • SKU: {product.sku}</p>
-          <h1 className="text-3xl lg:text-4xl font-extrabold tracking-tight text-[#111214] mb-4">{product.name}</h1>
-          <p className="text-2xl font-bold text-[#9C6644] mb-6">{formatMoney(product.price)}</p>
+        <div className="store-product-info flex w-full flex-col p-5 sm:p-8 lg:w-1/2 lg:p-10">
+          <p className="store-eyebrow mb-2 text-sm font-semibold uppercase tracking-wider">{product.category}</p>
+          <h1 id="product-title" className="store-section-title mb-3 text-3xl font-semibold tracking-tight lg:text-4xl">{product.name}</h1>
+          <p className="store-product-detail__price mb-5 text-2xl font-semibold">{formatMoney(product.price)}</p>
           
-          <p className="text-[#4A5568] text-base leading-relaxed mb-8 border-b border-[#E5E4E0] pb-8">
-            {product.description}
-          </p>
+          <details className="store-disclosure mb-6">
+            <summary>About this appliance</summary>
+            <p className="store-muted mt-3 text-sm leading-6">{product.description || 'Contact our support team if you need more information about this appliance.'}</p>
+          </details>
           
           <div className="mt-auto space-y-6">
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="store-purchase-row flex flex-wrap items-center gap-3">
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <div className="min-w-[4.75rem] shrink-0">
-                  <span className="block text-sm font-semibold text-[#4A5568]">Quantity</span>
-                  <span className="mt-1 block text-xs text-[#858884]">{product.stock} available</span>
+                  <span className="store-field-label block text-sm font-semibold">Quantity</span>
+                  <span className="store-muted mt-1 block text-xs">{product.stock} available</span>
                 </div>
-                <div className="flex shrink-0 items-center overflow-hidden rounded-lg border border-[#E5E4E0] bg-white">
-                <button onClick={() => setQty(Math.max(1, qty - 1))} className="px-4 py-2 text-[#4A5568] hover:bg-[#F4F3EF] transition-colors">-</button>
-                <span className="px-4 py-2 font-medium w-12 text-center border-x border-[#E5E4E0]">{qty}</span>
+                <div className="store-quantity-control flex shrink-0 items-center overflow-hidden rounded-lg">
+                <button type="button" onClick={() => setQty(Math.max(1, qty - 1))} aria-label="Decrease quantity" className="store-quantity-button">−</button>
+                <span className="store-quantity-value w-12 text-center font-medium" aria-live="polite">{qty}</span>
                 <button 
+                  type="button"
                   onClick={() => setQty(Math.min(product.stock, qty + 1))} 
                   disabled={qty >= product.stock}
-                  className="px-4 py-2 text-[#4A5568] hover:bg-[#F4F3EF] transition-colors disabled:opacity-50"
+                  aria-label="Increase quantity"
+                  className="store-quantity-button"
                 >
                   +
                 </button>
                 </div>
               </div>
-              <ProductChatWidget productId={product.id} productName={product.name} user={user} inlineTrigger />
+              <Suspense fallback={null}>
+                <ProductChatWidget productId={product.id} productName={product.name} user={user} inlineTrigger />
+              </Suspense>
             </div>
             
             <button 
               onClick={() => addToCart(product.id, qty)}
               disabled={isOutOfStock}
-              className={`add-to-cart-button w-full py-4 rounded-xl font-bold text-lg transition-all shadow-md ${
+              className={`store-button-primary add-to-cart-button w-full py-4 text-lg font-semibold ${
                 isOutOfStock 
                   ? 'bg-gray-200 text-gray-500 cursor-not-allowed shadow-none' 
                   : 'bg-[#111214] text-white hover:bg-[#24272A] hover:shadow-lg active:scale-[0.98]'
@@ -1489,7 +1546,7 @@ const StoreProductDetail = ({ id }) => {
               {isOutOfStock ? 'Currently Unavailable' : 'Add to Cart'}
             </button>
             
-            <div className="grid grid-cols-1 gap-3 text-sm text-[#4A5568] pt-4 border-t border-[#E5E4E0] sm:grid-cols-2">
+            <div className="store-product-benefits grid grid-cols-1 gap-3 pt-4 text-sm sm:grid-cols-2">
               <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 shrink-0 text-[#9C6644]"/> 3 Months Warranty</div>
               <div className="flex items-center gap-2"><Package className="h-4 w-4 shrink-0 text-[#9C6644]"/> Delivery is offered</div>
               <div className="flex items-center gap-2 sm:col-span-2"><Trash2 className="h-4 w-4 shrink-0 text-[#9C6644]"/> Old appliance haul-away offered</div>
@@ -1497,7 +1554,7 @@ const StoreProductDetail = ({ id }) => {
           </div>
         </div>
       </div>
-    </div>
+    </section>
   );
 };
 
@@ -1826,6 +1883,18 @@ const AdminRouter = ({ route }) => {
   if (route.includes('orders')) return <SupabaseAdminOrders />;
   return <AdminDashboard />;
 };
+
+const AdminRouteLoading = () => (
+  <div className="mx-auto flex min-h-64 max-w-6xl items-center justify-center p-8" role="status" aria-live="polite">
+    <span className="text-sm text-[#858884]">Loading administrator tools…</span>
+  </div>
+);
+
+const StoreRouteLoading = () => (
+  <div className="mx-auto flex min-h-64 max-w-6xl items-center justify-center px-4 py-16" role="status" aria-live="polite">
+    <span className="text-sm text-[var(--store-muted)]">Loading…</span>
+  </div>
+);
 
 const AdminNewProduct = () => {
   const { navigate, loadProducts, adminBasePath } = useContext(AppContext);

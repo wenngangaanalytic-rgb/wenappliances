@@ -136,6 +136,25 @@ const buildProductsPage = (template, products) => {
   });
 };
 
+const buildTermsPage = (template) => renderHead({
+  template,
+  title: 'Terms and Conditions | Wen Appliances',
+  description: 'Read the terms for using the Wen Appliances website, placing orders, delivery, pickup and product support.',
+  canonical: `${siteUrl}/terms`,
+  image: `${siteUrl}/wen-icon.png`,
+  imageAlt: 'Wen Appliances logo',
+  robots: 'index, follow',
+  type: 'website',
+  jsonLd: {
+    '@context': 'https://schema.org',
+    '@graph': [
+      baseGraph,
+      websiteGraph,
+      { '@type': 'WebPage', '@id': `${siteUrl}/terms#webpage`, name: 'Terms and Conditions', url: `${siteUrl}/terms`, isPartOf: { '@id': `${siteUrl}/#website` } }
+    ]
+  }
+});
+
 const buildProductPage = (template, product) => {
   const productId = encodeURIComponent(String(product.id));
   const canonical = `${siteUrl}/product/${productId}`;
@@ -189,6 +208,9 @@ if (!readFileSync(templatePath, 'utf8')) throw new Error('The storefront index.h
 
 try {
   const template = readFileSync(templatePath, 'utf8');
+  mkdirSync(join(distRoot, 'terms'), { recursive: true });
+  writeFileSync(join(distRoot, 'terms', 'index.html'), buildTermsPage(template), 'utf8');
+
   const products = await fetchProducts();
 
   mkdirSync(join(distRoot, 'products'), { recursive: true });
