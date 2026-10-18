@@ -22,6 +22,18 @@ export default defineConfig(({ mode }) => ({
     tailwindcss()
   ],
   build: {
-    outDir: mode === 'admin' ? 'dist/admin' : 'dist'
+    outDir: mode === 'admin' ? 'dist/admin' : 'dist',
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/node_modules/react/') || id.includes('/node_modules/react-dom/') || id.includes('/node_modules/scheduler/')) {
+            return 'vendor-react';
+          }
+          if (id.includes('/node_modules/@supabase/')) return 'vendor-supabase';
+          if (id.includes('/node_modules/@capacitor/')) return 'vendor-capacitor';
+          return undefined;
+        }
+      }
+    }
   }
 }));

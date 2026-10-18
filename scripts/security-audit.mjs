@@ -8,8 +8,7 @@
  */
 
 const DEFAULT_TARGETS = [
-  'https://wenappliances.net',
-  'https://www.wenappliances.net',
+  'https://wenappliances.vercel.app',
   'https://wenappliances-admin.vercel.app'
 ];
 
@@ -42,8 +41,8 @@ WenAppliances low-impact security audit
 
 Usage:
   npm run security:audit
-  npm run security:audit -- --target https://wenappliances.net
-  npm run security:audit -- --target https://wenappliances.net --target https://wenappliances-admin.vercel.app
+  npm run security:audit -- --target https://wenappliances.vercel.app
+  npm run security:audit -- --target https://wenappliances.vercel.app --target https://wenappliances-admin.vercel.app
   npm run security:audit -- --json
 
 Only WenAppliances-owned hosts are accepted. The audit sends GET requests only.
