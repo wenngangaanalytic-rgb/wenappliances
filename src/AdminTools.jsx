@@ -3,6 +3,7 @@ import {
   Boxes,
   ClipboardList,
   Download,
+  FileClock,
   Eye,
   EyeOff,
   LoaderCircle,
@@ -37,6 +38,8 @@ export default function AdminTools() {
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [members, setMembers] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [auditLogState, setAuditLogState] = useState('loading');
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [error, setError] = useState('');
@@ -50,13 +53,14 @@ export default function AdminTools() {
     if (!silent) setLoading(true);
     setError('');
 
-    const [productsResult, ordersResult, membersResult] = await Promise.all([
+    const [productsResult, ordersResult, membersResult, auditResult] = await Promise.all([
       // The production products table does not include a SKU column. Keep
       // this query aligned with the live schema; SKU remains optional in XLSX
       // output and other admin views can still display a fallback value.
       supabase.from('products').select('id, name, category, price, stock, created_at').order('name'),
       supabase.from('orders').select('id, customer_name, customer_email, total_amount, status, fulfillment_method, created_at').order('created_at', { ascending: false }),
-      supabase.from('members').select('id, email, full_name, created_at').order('created_at', { ascending: false })
+      supabase.from('members').select('id, email, full_name, created_at').order('created_at', { ascending: false }),
+      supabase.from('admin_audit_log').select('id, created_at, actor_id, action, entity, entity_id, details').order('created_at', { ascending: false }).limit(20)
     ]);
 
     const failures = [productsResult, ordersResult, membersResult]
@@ -66,6 +70,17 @@ export default function AdminTools() {
     setProducts(productsResult.data ?? []);
     setOrders(ordersResult.data ?? []);
     setMembers(membersResult.data ?? []);
+    if (!auditResult.error) {
+      setAuditLogs(auditResult.data ?? []);
+      setAuditLogState('ready');
+    } else if (auditResult.error.code === '42P01' || auditResult.error.code === 'PGRST205') {
+      setAuditLogs([]);
+      setAuditLogState('migration-needed');
+    } else {
+      setAuditLogs([]);
+      setAuditLogState('unavailable');
+      console.warn('Admin audit log is unavailable.', auditResult.error);
+    }
     setLastUpdated(new Date());
 
     if (failures.length) {
@@ -287,6 +302,17 @@ export default function AdminTools() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-[#24272A] bg-[#17191C] shadow-sm">
+        <div className="flex items-start justify-between gap-4 border-b border-[#24272A] p-5">
+          <div><h2 className="font-semibold text-[#F1F3EF]">Recent admin activity</h2><p className="mt-1 text-sm text-[#858884]">Database-recorded changes to products and order operations.</p></div>
+          <FileClock className="h-5 w-5 shrink-0 text-[#9C6644]" aria-hidden="true" />
+        </div>
+        {auditLogState === 'migration-needed' ? <p className="p-5 text-sm text-amber-200">Apply the admin operations Supabase migration to enable the audit trail.</p>
+          : auditLogState === 'unavailable' ? <p className="p-5 text-sm text-[#858884]">Audit events are unavailable to this session. Check the administrator role and Supabase policies.</p>
+            : auditLogs.length ? <ul className="divide-y divide-[#24272A]">{auditLogs.map((entry) => <li key={entry.id} className="flex flex-col gap-1 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#F1F3EF]">{entry.action.replaceAll('.', ' ')} <span className="font-normal text-[#858884]">· {entry.entity} · {String(entry.entity_id).slice(0, 12)}</span></p><p className="text-xs text-[#777B78]">{entry.actor_id ? `Admin ${String(entry.actor_id).slice(0, 8)}` : 'System'}{entry.details?.after?.status ? ` · ${entry.details.after.status}` : ''}</p></div><time className="shrink-0 text-xs text-[#858884]" dateTime={entry.created_at}>{formatDate(entry.created_at)}</time></li>)}</ul>
+              : <p className="p-5 text-sm text-[#858884]">No product or order changes have been recorded yet.</p>}
       </div>
 
       {pendingExport && (

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Calendar,
   CheckCircle2,
@@ -7,12 +7,16 @@ import {
   CreditCard,
   Download,
   Edit3,
+  ExternalLink,
+  FileText,
   LoaderCircle,
   Mail,
   MapPin,
   Package,
   Phone,
+  Search,
   Save,
+  Upload,
   UserRound,
   X
 } from 'lucide-react';
@@ -73,6 +77,29 @@ const statusLabel = (status, fulfillmentMethod) => {
 };
 
 const statusClass = (status) => STATUS_STYLES[normalizeStatus(status)] || 'order-status-unknown';
+const ORDERS_PAGE_SIZE = 20;
+const DELIVERY_DOCUMENT_BUCKET = 'wen-delivery-documents';
+const DELIVERY_DOCUMENT_MAX_BYTES = 10 * 1024 * 1024;
+
+const isMissingColumn = (error, column) => (
+  error?.code === '42703'
+  || error?.code === 'PGRST204'
+  || String(error?.message || '').toLowerCase().includes(column.toLowerCase())
+);
+
+const getSafeSearchTerm = (value) => String(value || '').trim().replace(/[^\p{L}\p{N}@.+\-\s]/gu, ' ').replace(/\s+/g, ' ').slice(0, 100);
+
+const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
+const getDocumentExtension = (file) => {
+  const knownExtensions = {
+    'application/pdf': 'pdf',
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp'
+  };
+  return knownExtensions[file.type] || '';
+};
 
 const buildReceiptEmailBody = (order) => {
   const items = getReceiptItems(order).map((item) => `${item.name} x ${item.quantity} - ${formatMoney(item.total)}`);
@@ -105,14 +132,61 @@ const emailReceipt = (order) => {
 
 export default function AdminOrders() {
   const [orders, setOrders] = useState([]);
+  const [activeOrderCount, setActiveOrderCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('search') || '');
+  const [debouncedSearch, setDebouncedSearch] = useState(() => new URLSearchParams(window.location.search).get('search') || '');
+  const [page, setPage] = useState(0);
+  const [totalOrders, setTotalOrders] = useState(0);
+  const [deliveryFieldsReady, setDeliveryFieldsReady] = useState(null);
+  const [deliveryDrafts, setDeliveryDrafts] = useState({});
+  const [savingDeliveryId, setSavingDeliveryId] = useState('');
+  const [uploadingDocumentId, setUploadingDocumentId] = useState('');
   const [expandedOrderIds, setExpandedOrderIds] = useState(new Set());
   const [updatingOrderId, setUpdatingOrderId] = useState('');
   const [editingPriceId, setEditingPriceId] = useState('');
   const [priceDraft, setPriceDraft] = useState('');
   const [savingPriceId, setSavingPriceId] = useState('');
   const [adjustedOrderIds, setAdjustedOrderIds] = useState(new Set());
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(0);
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    let active = true;
+    void supabase.from('orders')
+      .select('delivery_assignee_name, delivery_assignee_phone, delivery_document_path')
+      .limit(0)
+      .then(({ error: schemaError }) => {
+        if (!active) return;
+        if (!schemaError) setDeliveryFieldsReady(true);
+        else if (['42703', 'PGRST204'].includes(schemaError.code) || /delivery_assignee_name|delivery_document_path/i.test(schemaError.message || '')) {
+          setDeliveryFieldsReady(false);
+        } else {
+          console.warn('Could not verify order delivery fields.', schemaError);
+          setDeliveryFieldsReady(false);
+        }
+      });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    const onNavigate = (event) => {
+      const path = String(event.detail?.path || '');
+      if (!path.includes('/orders')) return;
+      const nextSearch = new URL(path, window.location.origin).searchParams.get('search') || '';
+      setSearch(nextSearch);
+      setPage(0);
+    };
+    window.addEventListener('wen:navigate', onNavigate);
+    return () => window.removeEventListener('wen:navigate', onNavigate);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -123,23 +197,32 @@ export default function AdminOrders() {
         setError('');
       }
 
-      const { data, error: fetchError } = await supabase
-        .from('orders')
-        .select(`
-          *,
-          order_items (
-            id,
-            product_name,
-            product_images,
-            quantity,
-            price_at_time,
-            products (
-              name,
-              images
-            )
+      const safeSearch = getSafeSearchTerm(debouncedSearch);
+      let query = supabase.from('orders').select(`
+        *,
+        order_items (
+          id,
+          product_name,
+          product_images,
+          quantity,
+          price_at_time,
+          products (
+            name,
+            images
           )
-        `)
-        .order('created_at', { ascending: false });
+        )
+      `, { count: 'exact' }).not('status', 'ilike', '%cancel%');
+
+      if (safeSearch.length >= 2) {
+        if (isUuid(safeSearch)) query = query.eq('id', safeSearch);
+        else query = query.or(`customer_name.ilike.%${safeSearch}%,customer_email.ilike.%${safeSearch}%`);
+      }
+
+      const from = page * ORDERS_PAGE_SIZE;
+      const [{ data, error: fetchError, count }, activeCountResult] = await Promise.all([
+        query.order('created_at', { ascending: false }).range(from, from + ORDERS_PAGE_SIZE - 1),
+        supabase.from('orders').select('id', { count: 'exact', head: true }).in('status', ['Pending', 'Confirmed', 'Processing', 'Paid & Confirmed'])
+      ]);
 
       if (!active) return;
 
@@ -152,6 +235,12 @@ export default function AdminOrders() {
         }
       } else {
         setOrders((data ?? []).filter((order) => normalizeStatus(order.status) !== 'Cancelled'));
+        setTotalOrders(count ?? 0);
+        if (!activeCountResult.error) setActiveOrderCount(activeCountResult.count ?? 0);
+        setDeliveryDrafts((current) => Object.fromEntries((data ?? []).map((order) => [order.id, {
+          name: current[order.id]?.name ?? order.delivery_assignee_name ?? '',
+          phone: current[order.id]?.phone ?? order.delivery_assignee_phone ?? ''
+        }])));
       }
 
       if (!silent) setLoading(false);
@@ -160,7 +249,7 @@ export default function AdminOrders() {
     fetchOrders();
     window.addEventListener('wen:admin-refresh', fetchOrders);
 
-    const refreshTimer = window.setInterval(() => fetchOrders(true), 10000);
+    const refreshTimer = window.setInterval(() => fetchOrders(true), 30000);
     const ordersChannel = supabase
       .channel(`admin-orders-${Date.now()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => fetchOrders(true))
@@ -172,7 +261,7 @@ export default function AdminOrders() {
       window.clearInterval(refreshTimer);
       supabase.removeChannel(ordersChannel);
     };
-  }, []);
+  }, [page, debouncedSearch]);
 
   const toggleOrder = (orderId) => {
     setExpandedOrderIds((current) => {
@@ -282,11 +371,93 @@ export default function AdminOrders() {
     setSavingPriceId('');
   };
 
-  const activeOrderCount = useMemo(() => orders.filter((order) => {
-    const status = normalizeStatus(order.status);
-    return status === 'Pending' || status === 'Confirmed';
-  }).length, [orders]);
-  const orderCountLabel = useMemo(() => `${activeOrderCount} active order${activeOrderCount === 1 ? '' : 's'}`, [activeOrderCount]);
+  const saveDeliveryAssignment = async (order) => {
+    const draft = deliveryDrafts[order.id] || {};
+    const name = String(draft.name || '').trim();
+    const phone = String(draft.phone || '').trim();
+    if ((name && !phone) || (!name && phone)) {
+      toast.error('Enter both the delivery contact name and phone, or clear both fields.');
+      return;
+    }
+    if (name.length > 120 || (phone && (phone.length > 32 || !/^[+()\d\s.-]{7,32}$/.test(phone)))) {
+      toast.error('Enter a valid delivery contact name and phone number.');
+      return;
+    }
+    if (!deliveryFieldsReady) {
+      toast.error('Apply the admin operations Supabase migration before saving delivery assignments.');
+      return;
+    }
+
+    setSavingDeliveryId(order.id);
+    const assignment = { delivery_assignee_name: name || null, delivery_assignee_phone: phone || null };
+    const { error: updateError } = await supabase.from('orders').update(assignment).eq('id', order.id);
+    if (updateError) {
+      if (isMissingColumn(updateError, 'delivery_assignee_name')) setDeliveryFieldsReady(false);
+      toast.error(updateError.message || 'Unable to save delivery assignment.');
+    } else {
+      setOrders((current) => current.map((item) => item.id === order.id ? { ...item, ...assignment } : item));
+      toast.success(name ? 'Delivery contact saved.' : 'Delivery contact cleared.');
+    }
+    setSavingDeliveryId('');
+  };
+
+  const uploadDeliveryDocument = async (order, file) => {
+    if (!file) return;
+    const extension = getDocumentExtension(file);
+    if (!extension) {
+      toast.error('Choose a PDF, JPG, PNG, or WEBP delivery document.');
+      return;
+    }
+    if (file.size > DELIVERY_DOCUMENT_MAX_BYTES) {
+      toast.error('Delivery documents must be 10 MB or smaller.');
+      return;
+    }
+    if (!deliveryFieldsReady) {
+      toast.error('Apply the admin operations Supabase migration before uploading delivery documents.');
+      return;
+    }
+
+    const uniqueId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const documentPath = `${order.id}/${uniqueId}.${extension}`;
+    setUploadingDocumentId(order.id);
+    const { error: uploadError } = await supabase.storage.from(DELIVERY_DOCUMENT_BUCKET).upload(documentPath, file, {
+      contentType: file.type,
+      upsert: false
+    });
+
+    if (uploadError) {
+      toast.error(uploadError.message || 'Unable to upload delivery document.');
+      setUploadingDocumentId('');
+      return;
+    }
+
+    const { error: updateError } = await supabase.from('orders')
+      .update({ delivery_document_path: documentPath })
+      .eq('id', order.id);
+    if (updateError) {
+      await supabase.storage.from(DELIVERY_DOCUMENT_BUCKET).remove([documentPath]);
+      if (isMissingColumn(updateError, 'delivery_document_path')) setDeliveryFieldsReady(false);
+      toast.error(updateError.message || 'Unable to attach delivery document to this order.');
+    } else {
+      setOrders((current) => current.map((item) => item.id === order.id ? { ...item, delivery_document_path: documentPath } : item));
+      if (order.delivery_document_path) {
+        const { error: cleanupError } = await supabase.storage.from(DELIVERY_DOCUMENT_BUCKET).remove([order.delivery_document_path]);
+        if (cleanupError) toast.error('Document updated, but the previous private file could not be removed.');
+      }
+      toast.success('Private delivery document uploaded.');
+    }
+    setUploadingDocumentId('');
+  };
+
+  const openDeliveryDocument = async (path) => {
+    if (!path || !deliveryFieldsReady) return;
+    const { data, error: signedUrlError } = await supabase.storage.from(DELIVERY_DOCUMENT_BUCKET).createSignedUrl(path, 300);
+    if (signedUrlError || !data?.signedUrl) {
+      toast.error(signedUrlError?.message || 'Could not open this delivery document.');
+      return;
+    }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+  };
 
   return (
     <section className="space-y-6" aria-labelledby="admin-orders-title">
@@ -297,9 +468,17 @@ export default function AdminOrders() {
             <h1 id="admin-orders-title" className="text-2xl font-bold tracking-tight text-[#F1F3EF]">Order management</h1>
             <p className="mt-1 text-sm text-[#858884]">Review customer details, update fulfillment status, and record negotiated pricing.</p>
           </div>
-          {!loading && activeOrderCount > 0 && <span className="rounded-full border border-[#24272A] bg-[#17191C] px-3 py-1 text-xs font-semibold text-[#B8BAB7]">{orderCountLabel}</span>}
+          {!loading && activeOrderCount > 0 && <span className="rounded-full border border-[#24272A] bg-[#17191C] px-3 py-1 text-xs font-semibold text-[#B8BAB7]">{activeOrderCount} active order{activeOrderCount === 1 ? '' : 's'}</span>}
         </div>
       </div>
+
+      {deliveryFieldsReady === false && <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200" role="status">Delivery assignment and private document controls are waiting for the Supabase migration <code>20261018000000_admin_dashboard_operations.sql</code>.</div>}
+
+      <label className="relative block max-w-xl">
+        <span className="sr-only">Search orders by customer or order ID</span>
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#858884]" aria-hidden="true" />
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search customer or order ID" className="min-h-11 w-full rounded-xl border border-[#3A3D40] bg-[#17191C] py-2.5 pl-10 pr-3 text-sm text-[#F1F3EF] outline-none placeholder:text-[#777B78] focus:border-[#9C6644]" />
+      </label>
 
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300" role="alert">{error}</div>}
 
@@ -310,8 +489,8 @@ export default function AdminOrders() {
       ) : orders.length === 0 ? (
         <div className="rounded-xl border border-dashed border-[#4A5568] bg-[#17191C] p-12 text-center">
           <Package className="mx-auto h-10 w-10 text-[#858884]" aria-hidden="true" />
-          <h2 className="mt-4 text-lg font-semibold text-[#F1F3EF]">No orders yet</h2>
-          <p className="mt-2 text-sm text-[#858884]">New customer orders will appear here after checkout.</p>
+          <h2 className="mt-4 text-lg font-semibold text-[#F1F3EF]">{debouncedSearch.trim() ? 'No matching orders' : 'No orders yet'}</h2>
+          <p className="mt-2 text-sm text-[#858884]">{debouncedSearch.trim() ? 'Try another customer name, email, or complete order ID.' : 'New customer orders will appear here after checkout.'}</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -389,6 +568,24 @@ export default function AdminOrders() {
                       <p className="flex items-start gap-2 text-[#B8BAB7]"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#9C6644]" /> {order.fulfillment_method === 'DOOR_PICKUP' ? 'Door pickup' : 'Delivery is offered'}</p>
                       <p className="flex items-start gap-2 text-[#B8BAB7]"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#9C6644]" /> {order.delivery_address || 'Not provided'}</p>
                       <p className="flex items-start gap-2 text-[#B8BAB7]"><CreditCard className="mt-0.5 h-4 w-4 shrink-0 text-[#9C6644]" /> {order.payment_method || 'Not provided'}</p>
+                      <div className="space-y-2 border-t border-[#24272A] pt-3">
+                        <h3 className="font-semibold text-[#F1F3EF]">Delivery assignment</h3>
+                        <label className="block text-xs text-[#858884]">Contact name
+                          <input value={deliveryDrafts[order.id]?.name ?? order.delivery_assignee_name ?? ''} onChange={(event) => setDeliveryDrafts((current) => ({ ...current, [order.id]: { ...current[order.id], name: event.target.value } }))} maxLength={120} disabled={!deliveryFieldsReady} className="mt-1 min-h-10 w-full rounded-lg border border-[#3A3D40] bg-[#17191C] px-3 text-sm text-[#F1F3EF] outline-none focus:border-[#9C6644] disabled:opacity-50" placeholder="Driver / pickup contact" />
+                        </label>
+                        <label className="block text-xs text-[#858884]">Contact phone
+                          <input type="tel" value={deliveryDrafts[order.id]?.phone ?? order.delivery_assignee_phone ?? ''} onChange={(event) => setDeliveryDrafts((current) => ({ ...current, [order.id]: { ...current[order.id], phone: event.target.value } }))} maxLength={32} disabled={!deliveryFieldsReady} className="mt-1 min-h-10 w-full rounded-lg border border-[#3A3D40] bg-[#17191C] px-3 text-sm text-[#F1F3EF] outline-none focus:border-[#9C6644] disabled:opacity-50" placeholder="+1 555 000 0000" />
+                        </label>
+                        <button type="button" onClick={() => void saveDeliveryAssignment(order)} disabled={!deliveryFieldsReady || savingDeliveryId === order.id} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#9C6644] px-3 text-xs font-semibold text-white hover:bg-[#8A5A3C] disabled:cursor-not-allowed disabled:opacity-50">{savingDeliveryId === order.id ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save assignment</button>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 border-t border-[#24272A] pt-3">
+                        <label className={`inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border border-[#3A3D40] px-3 text-xs font-semibold text-[#B8BAB7] transition hover:border-[#9C6644] hover:text-white ${!deliveryFieldsReady || uploadingDocumentId === order.id ? 'pointer-events-none opacity-50' : ''}`}>
+                          {uploadingDocumentId === order.id ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                          {uploadingDocumentId === order.id ? 'Uploading…' : 'Attach document'}
+                          <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" disabled={!deliveryFieldsReady || uploadingDocumentId === order.id} className="sr-only" onChange={(event) => { void uploadDeliveryDocument(order, event.target.files?.[0]); event.target.value = ''; }} />
+                        </label>
+                        {order.delivery_document_path && <button type="button" onClick={() => void openDeliveryDocument(order.delivery_document_path)} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-[#3A3D40] px-3 text-xs font-semibold text-[#B8BAB7] hover:border-[#9C6644] hover:text-white"><FileText className="h-3.5 w-3.5" />View document<ExternalLink className="h-3 w-3" /></button>}
+                      </div>
                     </div>
 
                     <div className="space-y-3 text-sm lg:col-span-1">
@@ -413,6 +610,14 @@ export default function AdminOrders() {
           })}
         </div>
       )}
+
+      {!loading && totalOrders > ORDERS_PAGE_SIZE && <nav className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#24272A] bg-[#17191C] px-4 py-3" aria-label="Order pages">
+        <p className="text-xs text-[#858884]">Showing {page * ORDERS_PAGE_SIZE + 1}–{Math.min((page + 1) * ORDERS_PAGE_SIZE, totalOrders)} of {totalOrders} orders</p>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setPage((value) => Math.max(0, value - 1))} disabled={page === 0} className="min-h-10 rounded-lg border border-[#3A3D40] px-3 text-sm text-[#B8BAB7] hover:border-[#9C6644] disabled:cursor-not-allowed disabled:opacity-40">Previous</button>
+          <button type="button" onClick={() => setPage((value) => value + 1)} disabled={(page + 1) * ORDERS_PAGE_SIZE >= totalOrders} className="min-h-10 rounded-lg border border-[#3A3D40] px-3 text-sm text-[#B8BAB7] hover:border-[#9C6644] disabled:cursor-not-allowed disabled:opacity-40">Next</button>
+        </div>
+      </nav>}
     </section>
   );
 }

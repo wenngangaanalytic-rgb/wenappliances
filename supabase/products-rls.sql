@@ -3,6 +3,8 @@
 -- Supabase Auth users whose app_metadata.role is SUPER_ADMIN.
 
 alter table public.products enable row level security;
+alter table public.products
+  add column if not exists is_published boolean not null default true;
 
 -- Remove legacy permissive policies so the SUPER_ADMIN rules below are the
 -- only policies granting product writes.
@@ -10,11 +12,15 @@ drop policy if exists "Admins can manage products" on public.products;
 drop policy if exists "Public can view products" on public.products;
 
 drop policy if exists "Public can read products" on public.products;
-create policy "Public can read products"
+drop policy if exists "Public can read published products" on public.products;
+create policy "Public can read published products"
   on public.products
   for select
   to anon, authenticated
-  using (true);
+  using (
+    is_published is true
+    or (select auth.jwt() -> 'app_metadata' ->> 'role') = 'SUPER_ADMIN'
+  );
 
 drop policy if exists "Super admins can insert products" on public.products;
 create policy "Super admins can insert products"

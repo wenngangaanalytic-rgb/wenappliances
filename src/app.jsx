@@ -4,7 +4,7 @@ import {
   ShoppingCart, Search, Menu, X, User, ChevronRight, 
   Package, LayoutDashboard, Settings, LogOut, 
   TrendingUp, Users, DollarSign, Edit, Trash2, Plus,
-  ShieldCheck, AlertTriangle, CheckCircle2, Lock,
+  ShieldCheck, AlertTriangle, CheckCircle2, Lock, Eye, EyeOff,
   Printer, Download, ImagePlus, Moon, Sun, GripVertical, Star, MessagesSquare
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
@@ -149,6 +149,12 @@ const getRouteFromLocation = () => {
   } catch {
     return '/';
   }
+};
+
+const isMissingDatabaseColumn = (error, column) => {
+  const message = String(error?.message || '').toLowerCase();
+  return ['42703', 'PGRST204'].includes(error?.code)
+    && message.includes(String(column).toLowerCase());
 };
 
 const getSeoDescription = (value, fallback) => {
@@ -380,12 +386,23 @@ export default function App() {
     setProductsError('');
 
     try {
-      const { data, error } = await supabase
+      const buildProductsQuery = (includeVisibility) => {
+        let query = supabase
         .from('products')
-        // Keep this projection aligned with the production products table.
-        // Catalog status is derived by normalizeProduct from stock because the
-        // current schema does not include a products.status column.
-        .select('id, name, category, price, stock, images, description');
+          .select(includeVisibility
+            ? 'id, name, category, price, stock, images, description, is_published'
+            : 'id, name, category, price, stock, images, description');
+
+        if (includeVisibility && !isAdminApp) query = query.eq('is_published', true);
+        return query;
+      };
+
+      let { data, error } = await buildProductsQuery(true);
+      if (isMissingDatabaseColumn(error, 'is_published')) {
+        // Keep the storefront usable while the additive visibility migration
+        // is being applied. Existing products remain visible until then.
+        ({ data, error } = await buildProductsQuery(false));
+      }
 
       if (error) throw error;
       setProducts((data ?? []).map(normalizeProduct));
@@ -414,6 +431,7 @@ export default function App() {
     }
 
     setCurrentRoute(nextRoute);
+    window.dispatchEvent(new CustomEvent('wen:navigate', { detail: { path: nextUrl } }));
     window.scrollTo(0, 0);
   };
 
@@ -462,13 +480,18 @@ export default function App() {
       price: Number(formProduct.price),
       stock: Number(formProduct.stock),
       description: formProduct.description || '',
-      images
+      images,
+      is_published: formProduct.is_published !== false
     };
 
-    const query = isNew
-      ? supabase.from('products').insert(payload).select().single()
-      : supabase.from('products').update(payload).eq('id', id).select().single();
-    const { data, error } = await query;
+    const save = (productPayload) => isNew
+      ? supabase.from('products').insert(productPayload).select().single()
+      : supabase.from('products').update(productPayload).eq('id', id).select().single();
+    let { data, error } = await save(payload);
+    if (isMissingDatabaseColumn(error, 'is_published')) {
+      const { is_published: omittedVisibility, ...compatiblePayload } = payload;
+      ({ data, error } = await save(compatiblePayload));
+    }
 
     if (error) throw error;
 
@@ -478,6 +501,26 @@ export default function App() {
       : prev.map(item => item.id === savedProduct.id ? savedProduct : item)
     );
     return savedProduct;
+  };
+
+  const setProductPublished = async (productId, isPublished) => {
+    const previousProducts = products;
+    setProducts((current) => current.map((product) => product.id === productId
+      ? normalizeProduct({ ...product, is_published: isPublished })
+      : product));
+
+    const { error } = await supabase
+      .from('products')
+      .update({ is_published: isPublished })
+      .eq('id', productId);
+
+    if (error) {
+      setProducts(previousProducts);
+      if (isMissingDatabaseColumn(error, 'is_published')) {
+        throw new Error('Apply the Supabase admin dashboard migration before changing product visibility.');
+      }
+      throw error;
+    }
   };
 
   const deleteProduct = async (product) => {
@@ -529,7 +572,7 @@ export default function App() {
     return true;
   };
   const logout = async () => {
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     setUser(null);
     navigate('/');
   };
@@ -548,7 +591,7 @@ export default function App() {
 
   const contextValue = {
     user, login, logout,
-    products, setProducts, saveProduct, deleteProduct, loadProducts, productsLoading, productsError,
+    products, setProducts, saveProduct, deleteProduct, setProductPublished, loadProducts, productsLoading, productsError,
     orders, setOrders,
     cart, addToCart, updateCartQty, clearCart, cartTotal, cartItemCount, isCartOpen, setIsCartOpen,
     navigate, currentRoute,
@@ -1723,24 +1766,140 @@ const StoreCheckout = () => {
 // STRICTLY SEPARATE VISUAL IDENTITY from Storefront
 // ============================================================================
 
+const AdminGlobalSearch = ({ navigate, adminBasePath }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    const handleShortcut = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setIsOpen(true);
+        window.setTimeout(() => inputRef.current?.focus(), 0);
+      }
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, []);
+
+  useEffect(() => {
+    const value = query.trim();
+    if (!isOpen || value.length < 2) {
+      setResults([]);
+      setIsSearching(false);
+      return undefined;
+    }
+
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      setIsSearching(true);
+      const pattern = `%${value.replace(/[\\%_]/g, '\\$&')}%`;
+      const [productsResult, ordersResult, messagesResult] = await Promise.all([
+        supabase.from('products').select('id, name, category').ilike('name', pattern).limit(4),
+        supabase.from('orders').select('id, customer_name, status').ilike('customer_name', pattern).order('created_at', { ascending: false }).limit(4),
+        supabase.from('messages').select('session_id, product_id, product_name, content, created_at').ilike('content', pattern).order('created_at', { ascending: false }).limit(4)
+      ]);
+      if (!active) return;
+
+      const route = (name, search) => `${adminBasePath}/${name}${search}` || `/${name}${search}`;
+      setResults([
+        ...(productsResult.data || []).map((row) => ({ type: 'product', key: `product:${row.id}`, title: row.name, detail: row.category || 'Appliance', target: route('products', `?search=${encodeURIComponent(row.name)}`) })),
+        ...(ordersResult.data || []).map((row) => ({ type: 'order', key: `order:${row.id}`, title: row.customer_name || 'Customer order', detail: `${row.status || 'Pending'} · ${String(row.id).slice(0, 8)}`, target: route('orders', `?search=${encodeURIComponent(row.customer_name || row.id)}`) })),
+        ...(messagesResult.data || []).map((row) => ({ type: 'chat', key: `chat:${row.session_id}:${row.product_id}`, title: row.product_name || 'Product support chat', detail: row.content, target: route('chats', `?thread=${encodeURIComponent(`${row.session_id}::${row.product_id}`)}`) }))
+      ]);
+      setIsSearching(false);
+    }, 220);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [adminBasePath, isOpen, query]);
+
+  const selectResult = (target) => {
+    setIsOpen(false);
+    setQuery('');
+    navigate(target);
+  };
+
+  return (
+    <>
+      <button type="button" onClick={() => { setIsOpen(true); window.setTimeout(() => inputRef.current?.focus(), 0); }} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#3A3D40] bg-[#0B0B0C] px-3 text-sm text-[#B8BAB7] transition hover:border-[#9C6644] hover:text-[#F1F3EF]" aria-label="Search products, orders, and support messages">
+        <Search className="h-4 w-4" aria-hidden="true" /><span className="hidden xl:inline">Search</span><kbd className="hidden rounded border border-[#3A3D40] px-1.5 py-0.5 text-[10px] text-[#858884] sm:inline">Ctrl K</kbd>
+      </button>
+      {isOpen && <div className="fixed inset-0 z-[300] flex items-start justify-center bg-black/60 px-3 pt-[max(4.5rem,env(safe-area-inset-top))] backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsOpen(false); }}>
+        <section className="w-full max-w-2xl overflow-hidden rounded-2xl border border-[#3A3D40] bg-[#17191C] shadow-2xl" role="dialog" aria-modal="true" aria-label="Search administrator data">
+          <div className="flex items-center gap-3 border-b border-[#2A2D30] px-4"><Search className="h-5 w-5 shrink-0 text-[#C08457]" aria-hidden="true" /><input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search products, customers, orders, messages…" className="min-h-14 min-w-0 flex-1 bg-transparent text-sm text-[#F1F3EF] outline-none placeholder:text-[#858884]" aria-label="Search products, customers, orders, and messages" /><button type="button" onClick={() => setIsOpen(false)} className="rounded-lg p-2 text-[#858884] hover:bg-[#24272A] hover:text-white" aria-label="Close search"><X className="h-4 w-4" /></button></div>
+          <div className="max-h-[min(60dvh,30rem)] overflow-y-auto p-2">
+            {query.trim().length < 2 ? <p className="px-3 py-6 text-sm text-[#858884]">Type at least two characters to search live Supabase records.</p> : isSearching ? <p className="px-3 py-6 text-sm text-[#858884]">Searching…</p> : results.length ? results.map((result) => {
+              const Icon = result.type === 'product' ? Package : result.type === 'order' ? ShoppingCart : MessagesSquare;
+              return <button key={result.key} type="button" onClick={() => selectResult(result.target)} className="flex min-h-14 w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-[#24272A] focus:bg-[#24272A] focus:outline-none"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#24272A] text-[#C08457]"><Icon className="h-4 w-4" aria-hidden="true" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-[#F1F3EF]">{result.title}</span><span className="mt-0.5 block truncate text-xs text-[#858884]">{result.detail}</span></span><span className="text-[10px] uppercase tracking-wide text-[#777B78]">{result.type}</span></button>;
+            }) : <p className="px-3 py-6 text-sm text-[#858884]">No matching products, orders, or support messages.</p>}
+          </div>
+          <div className="border-t border-[#2A2D30] px-4 py-2 text-[11px] text-[#777B78]">Results are limited to records available to this administrator session.</div>
+        </section>
+      </div>}
+    </>
+  );
+};
+
 const AdminLayout = ({ children }) => {
   const { user, logout, navigate, currentRoute, theme, toggleTheme, adminBasePath } = useContext(AppContext);
   const [activeOrderCount, setActiveOrderCount] = useState(0);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState({ support: true, system: true });
+  const [connectionStatus, setConnectionStatus] = useState('checking');
+  const [showIdleWarning, setShowIdleWarning] = useState(false);
+  const logoutRef = useRef(logout);
   const storefrontUrl = import.meta.env.VITE_STOREFRONT_URL || (isAdminApp ? 'https://wenappliances.vercel.app' : '/');
+
+  useEffect(() => { logoutRef.current = logout; }, [logout]);
+
+  useEffect(() => {
+    const handleConnection = (event) => setConnectionStatus(event.detail?.status || 'checking');
+    window.addEventListener('wen:admin-connection-status', handleConnection);
+    return () => window.removeEventListener('wen:admin-connection-status', handleConnection);
+  }, []);
+
+  useEffect(() => {
+    let warningTimer;
+    let logoutTimer;
+    const resetIdleTimers = () => {
+      window.clearTimeout(warningTimer);
+      window.clearTimeout(logoutTimer);
+      setShowIdleWarning(false);
+      warningTimer = window.setTimeout(() => setShowIdleWarning(true), 29 * 60 * 1000);
+      logoutTimer = window.setTimeout(() => {
+        toast.error('You were signed out after 30 minutes without activity.');
+        void logoutRef.current();
+      }, 30 * 60 * 1000);
+    };
+    const events = ['pointerdown', 'keydown', 'touchstart', 'wheel'];
+    events.forEach((eventName) => window.addEventListener(eventName, resetIdleTimers, { passive: true }));
+    window.addEventListener('wen:admin-activity', resetIdleTimers);
+    resetIdleTimers();
+    return () => {
+      window.clearTimeout(warningTimer);
+      window.clearTimeout(logoutTimer);
+      events.forEach((eventName) => window.removeEventListener(eventName, resetIdleTimers));
+      window.removeEventListener('wen:admin-activity', resetIdleTimers);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
 
     const refreshActiveOrderCount = async () => {
-      const { data, error } = await supabase.from('orders').select('id, status');
-      if (!active || error) return;
-
-      const count = (data ?? []).filter((order) => {
-        const status = String(order.status || '').toLowerCase();
-        return !status.includes('cancel') && !status.includes('complete') && !status.includes('deliver') && !status.includes('picked');
-      }).length;
-      setActiveOrderCount(count);
+      const [pendingResult, confirmedResult] = await Promise.all([
+        supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'Pending'),
+        supabase.from('orders').select('id', { count: 'exact', head: true }).in('status', ['Confirmed', 'Processing', 'Paid & Confirmed'])
+      ]);
+      if (!active || pendingResult.error || confirmedResult.error) return;
+      setActiveOrderCount((pendingResult.count || 0) + (confirmedResult.count || 0));
     };
 
     refreshActiveOrderCount();
@@ -1758,48 +1917,56 @@ const AdminLayout = ({ children }) => {
   useEffect(() => {
     setIsMobileNavOpen(false);
   }, [currentRoute]);
+
+  useEffect(() => {
+    const groupId = currentRoute.includes('chats') || currentRoute.includes('members')
+      ? 'support'
+      : currentRoute.includes('tools') ? 'system' : 'operations';
+    setCollapsedGroups((current) => ({ ...current, [groupId]: false }));
+  }, [currentRoute]);
   
-  const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'products', label: 'Inventory & Products', icon: Package },
-    { id: 'orders', label: 'Order Management', icon: ShoppingCart },
-    { id: 'members', label: 'Members', icon: Users },
-    { id: 'chats', label: 'Product Chats', icon: MessagesSquare },
-    { id: 'tools', label: 'Admin Tools', icon: Settings },
+  const navGroups = [
+    { id: 'operations', label: 'Operations', items: [
+      { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
+      { id: 'products', label: 'Inventory', icon: Package },
+      { id: 'orders', label: 'Orders', icon: ShoppingCart }
+    ] },
+    { id: 'support', label: 'Customers & support', items: [
+      { id: 'chats', label: 'Product chats', icon: MessagesSquare },
+      { id: 'members', label: 'Members', icon: Users }
+    ] },
+    { id: 'system', label: 'System', items: [
+      { id: 'tools', label: 'Admin tools', icon: Settings }
+    ] }
   ];
+
+  const renderNavigation = () => navGroups.map((group) => {
+    const isCollapsed = Boolean(collapsedGroups[group.id]);
+    return <section key={group.id} className="space-y-1">
+      <button type="button" onClick={() => setCollapsedGroups((current) => ({ ...current, [group.id]: !current[group.id] }))} className="flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-[10px] font-bold uppercase tracking-[0.15em] text-[#858884] transition hover:bg-[#1D2023] hover:text-[#B8BAB7]" aria-expanded={!isCollapsed}>
+        <span>{group.label}</span><ChevronRight className={`h-3.5 w-3.5 transition-transform ${isCollapsed ? '' : 'rotate-90'}`} aria-hidden="true" />
+      </button>
+      {!isCollapsed && group.items.map((item) => {
+        const path = `${adminBasePath}/${item.id}` || `/${item.id}`;
+        const adminRoot = adminBasePath ? currentRoute === adminBasePath : currentRoute === '/';
+        const active = currentRoute.includes(item.id) || (adminRoot && item.id === 'dashboard');
+        return <button key={item.id} type="button" onClick={() => navigate(path)} className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors ${active ? 'bg-[#9C6644] text-white' : 'text-[#B8BAB7] hover:bg-[#24272A] hover:text-[#F1F1EF]'}`}>
+          <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left"><span className="truncate">{item.label}</span>{item.id === 'orders' && activeOrderCount > 0 && <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-[#9C6644] px-1.5 py-0.5 text-[10px] font-bold text-white">{activeOrderCount}</span>}</span>
+        </button>;
+      })}
+    </section>;
+  });
 
   return (
     <div className="motion-fade-in min-h-screen bg-[#0B0B0C] text-[#F1F1EF] flex font-sans selection:bg-[#9C6644]/30">
       {/* Sidebar */}
-      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-[#24272A] bg-[#17191C] md:flex">
+      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-[#24272A] bg-[#17191C] lg:flex">
         <div className="p-6 border-b border-[#24272A]">
           <Logo dark={theme === 'dark'} />
         </div>
-        <nav className="grow py-6 px-3 space-y-1">
-          {navItems.map(item => {
-            const path = `${adminBasePath}/${item.id}` || `/${item.id}`;
-            const adminRoot = adminBasePath ? currentRoute === adminBasePath : currentRoute === '/';
-            const active = currentRoute.includes(item.id) || (adminRoot && item.id === 'dashboard');
-            return (
-              <button 
-                key={item.id}
-                onClick={() => navigate(path)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  active ? 'bg-[#9C6644] text-white' : 'text-[#B8BAB7] hover:bg-[#24272A] hover:text-[#F1F1EF]'
-                }`}
-              >
-                <item.icon className="h-4 w-4" />
-                <span className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left">
-                  <span className="truncate">{item.label}</span>
-                  {item.id === 'orders' && activeOrderCount > 0 && (
-                    <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-[#9C6644] px-1.5 py-0.5 text-[10px] font-bold text-white" aria-label={`${activeOrderCount} active orders`}>
-                      {activeOrderCount}
-                    </span>
-                  )}
-                </span>
-              </button>
-            );
-          })}
+        <nav className="grow space-y-4 overflow-y-auto px-3 py-5" aria-label="Administrator navigation">
+          {renderNavigation()}
         </nav>
         <div className="p-4 border-t border-[#24272A] flex flex-col gap-4">
            <div className="flex items-center gap-3 px-2">
@@ -1816,47 +1983,34 @@ const AdminLayout = ({ children }) => {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex min-w-0 grow flex-col overflow-hidden md:h-screen">
-        <header className="relative z-[110] flex min-h-16 shrink-0 items-center justify-between border-b border-[#24272A] bg-[#17191C]/80 px-4 backdrop-blur-md sm:px-8">
+      <main className="flex min-h-screen min-w-0 grow flex-col overflow-hidden lg:h-screen">
+        <header className="sticky top-0 z-[110] flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-[#24272A] bg-[#17191C]/95 px-3 backdrop-blur-md sm:px-5 lg:px-8">
            <div className="flex min-w-0 items-center gap-2 text-sm text-[#858884]">
-             <button type="button" onClick={() => setIsMobileNavOpen((open) => !open)} className="inline-flex shrink-0 items-center justify-center rounded-lg border border-[#4A5568]/40 bg-[#24272A] p-2 text-[#F1F1EF] hover:bg-[#30343A] md:hidden" aria-label={isMobileNavOpen ? 'Close administrator navigation' : 'Open administrator navigation'} aria-expanded={isMobileNavOpen}>
+             <button type="button" onClick={() => setIsMobileNavOpen((open) => !open)} className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-lg border border-[#4A5568]/40 bg-[#24272A] text-[#F1F1EF] hover:bg-[#30343A] lg:hidden" aria-label={isMobileNavOpen ? 'Close administrator navigation' : 'Open administrator navigation'} aria-expanded={isMobileNavOpen}>
                {isMobileNavOpen ? <X className="h-4 w-4" aria-hidden="true" /> : <Menu className="h-4 w-4" aria-hidden="true" />}
              </button>
-             <Lock className="hidden h-4 w-4 shrink-0 sm:block" />
-             <span className="hidden truncate sm:inline">Environment: Production Database</span>
-             <span className="sm:hidden">Admin</span>
+             <Lock className="hidden h-4 w-4 shrink-0 xl:block" />
+             <span className="hidden truncate xl:inline">Wen Appliances Admin</span>
            </div>
-             <div className="flex items-center gap-3">
+             <div className="flex min-w-0 items-center justify-end gap-2 sm:gap-3">
+             <span className="hidden items-center gap-2 rounded-full border border-[#3A3D40] px-2.5 py-2 text-[11px] text-[#B8BAB7] xl:inline-flex" title={connectionStatus === 'online' ? 'Supabase is reachable' : connectionStatus === 'checking' ? 'Checking Supabase connectivity' : 'Connection needs attention'}><span className={`h-2 w-2 rounded-full ${connectionStatus === 'online' ? 'bg-emerald-400' : connectionStatus === 'checking' ? 'bg-amber-400' : 'bg-red-400'}`} />{connectionStatus === 'online' ? 'Connected' : connectionStatus === 'checking' ? 'Checking' : 'Connection issue'}</span>
+             <AdminGlobalSearch navigate={navigate} adminBasePath={adminBasePath} />
+             <button type="button" onClick={() => navigate(`${adminBasePath}/new-product` || '/new-product')} className="hidden min-h-10 items-center gap-2 rounded-lg bg-[#9C6644] px-3 text-sm font-semibold text-white transition hover:bg-[#8A5A3C] sm:inline-flex"><Plus className="h-4 w-4" aria-hidden="true" /><span className="hidden xl:inline">Add appliance</span><span className="xl:hidden">Add</span></button>
              <ChatNotificationBell />
              <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
-             <a href={storefrontUrl} className="text-xs bg-[#24272A] hover:bg-[#1D2023] px-3 py-1.5 rounded border border-[#4A5568]/30 transition-colors">
+             <a href={storefrontUrl} className="inline-flex min-h-10 items-center rounded border border-[#4A5568]/30 bg-[#24272A] px-2.5 text-xs transition-colors hover:bg-[#1D2023] sm:px-3">
                <span className="hidden sm:inline">View Public Storefront</span>
                <span className="sm:hidden">Store</span>
              </a>
+             <button type="button" onClick={logout} className="hidden min-h-10 items-center gap-2 rounded-lg border border-[#3A3D40] px-2.5 text-xs text-[#B8BAB7] transition hover:border-red-500/40 hover:text-red-300 xl:inline-flex" title={`Signed in as ${user.name}; select to sign out`}><span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#24272A] font-bold text-[#C08457]">{user.name.charAt(0).toUpperCase()}</span><span className="max-w-24 truncate">{user.name}</span></button>
            </div>
            {isMobileNavOpen && (
              <>
-               <button type="button" onClick={() => setIsMobileNavOpen(false)} className="fixed inset-x-0 bottom-0 top-16 z-[90] bg-black/50 md:hidden" aria-label="Close administrator navigation" />
-               <nav className="fixed inset-x-0 top-16 z-[100] max-h-[calc(100dvh-4rem)] overflow-y-auto border-b border-[#24272A] bg-[#17191C] p-3 shadow-2xl md:hidden" aria-label="Administrator navigation">
-               <div className="grid gap-1">
-                 {navItems.map((item) => {
-                   const path = `${adminBasePath}/${item.id}` || `/${item.id}`;
-                   const adminRoot = adminBasePath ? currentRoute === adminBasePath : currentRoute === '/';
-                   const active = currentRoute.includes(item.id) || (adminRoot && item.id === 'dashboard');
-                   return (
-                     <button
-                       key={item.id}
-                       type="button"
-                       onClick={() => navigate(path)}
-                       className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm font-medium transition-colors ${active ? 'bg-[#9C6644] text-white' : 'text-[#B8BAB7] hover:bg-[#24272A] hover:text-[#F1F1EF]'}`}
-                     >
-                       <item.icon className="h-4 w-4 shrink-0" />
-                       <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                       {item.id === 'orders' && activeOrderCount > 0 && <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-[#9C6644] px-1.5 py-0.5 text-[10px] font-bold text-white">{activeOrderCount}</span>}
-                     </button>
-                   );
-                 })}
-               </div>
+               <button type="button" onClick={() => setIsMobileNavOpen(false)} className="fixed inset-x-0 bottom-0 top-16 z-[90] bg-black/50 lg:hidden" aria-label="Close administrator navigation" />
+               <nav className="fixed inset-x-0 top-16 z-[100] max-h-[calc(100dvh-4rem)] space-y-4 overflow-y-auto border-b border-[#24272A] bg-[#17191C] p-3 shadow-2xl lg:hidden" aria-label="Administrator navigation">
+                 {renderNavigation()}
+                 <button type="button" onClick={() => { setIsMobileNavOpen(false); navigate(`${adminBasePath}/new-product` || '/new-product'); }} className="flex min-h-11 w-full items-center gap-3 rounded-lg bg-[#9C6644] px-3 text-sm font-semibold text-white"><Plus className="h-4 w-4" aria-hidden="true" />Add appliance</button>
+                 <button type="button" onClick={() => void logout()} className="flex min-h-11 w-full items-center gap-3 rounded-lg border border-[#3A3D40] px-3 text-sm text-[#B8BAB7]"><LogOut className="h-4 w-4" aria-hidden="true" />Sign out</button>
                </nav>
              </>
            )}
@@ -1870,6 +2024,7 @@ const AdminLayout = ({ children }) => {
            </div>
          </PullToRefresh>
       </main>
+      {showIdleWarning && <div className="fixed inset-0 z-[260] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="idle-warning-title"><section className="w-full max-w-sm rounded-2xl border border-[#3A3D40] bg-[#17191C] p-5 shadow-2xl"><p className="text-xs font-semibold uppercase tracking-wider text-[#C08457]">Session security</p><h2 id="idle-warning-title" className="mt-2 text-lg font-semibold text-[#F1F3EF]">Still working?</h2><p className="mt-2 text-sm leading-6 text-[#B8BAB7]">For your security, you’ll be signed out after 30 minutes of inactivity. Continue the session to stay signed in.</p><div className="mt-5 flex gap-3"><button type="button" onClick={() => window.dispatchEvent(new Event('wen:admin-activity'))} className="min-h-11 flex-1 rounded-lg bg-[#9C6644] px-4 text-sm font-semibold text-white hover:bg-[#8A5A3C]">Continue session</button><button type="button" onClick={() => void logout()} className="min-h-11 rounded-lg border border-[#3A3D40] px-4 text-sm text-[#B8BAB7] hover:text-white">Sign out</button></div></section></div>}
     </div>
   );
 };
@@ -1912,7 +2067,8 @@ const AdminNewProduct = () => {
 const AdminDashboard = () => {
   const { navigate, adminBasePath } = useContext(AppContext);
   const [orders, setOrders] = useState([]);
-  const [products, setProducts] = useState([]);
+  const [lowStockProducts, setLowStockProducts] = useState([]);
+  const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -1921,23 +2077,32 @@ const AdminDashboard = () => {
     let active = true;
 
     const loadDashboard = async () => {
-      const [ordersResult, productsResult] = await Promise.all([
-        supabase.from('orders').select('id, customer_name, total_amount, status, created_at').order('created_at', { ascending: false }),
-        // Keep this query compatible with the production products schema;
-        // SKU is not a column in the current table.
-        supabase.from('products').select('id, name, stock, price').order('name')
+      const [summaryResult, ordersResult, lowStockResult] = await Promise.all([
+        supabase.rpc('admin_dashboard_summary'),
+        supabase.from('orders')
+          .select('id, customer_name, total_amount, status, created_at')
+          .order('created_at', { ascending: false })
+          .limit(6),
+        supabase.from('products')
+          .select('id, name, stock')
+          .lte('stock', 10)
+          .order('stock', { ascending: true })
+          .limit(8)
       ]);
 
       if (!active) return;
 
-      if (ordersResult.error || productsResult.error) {
-        setError(ordersResult.error?.message || productsResult.error?.message || 'Unable to load dashboard data.');
-      } else {
-        setError('');
-      }
-
+      const summaryMissing = summaryResult.error && ['PGRST202', '42883'].includes(summaryResult.error.code);
+      const failures = [ordersResult, lowStockResult]
+        .filter((result) => result.error)
+        .map((result) => result.error.message);
+      if (summaryResult.error && !summaryMissing) failures.push(summaryResult.error.message);
       setOrders(ordersResult.data ?? []);
-      setProducts(productsResult.data ?? []);
+      setLowStockProducts(lowStockResult.data ?? []);
+      setSummary(summaryResult.error ? null : summaryResult.data);
+      setError(failures.join(' ') || (summaryMissing
+        ? 'Dashboard summary is unavailable until the Supabase admin dashboard migration is applied.'
+        : ''));
       setLastUpdated(new Date());
       setLoading(false);
     };
@@ -1948,6 +2113,7 @@ const AdminDashboard = () => {
       .channel(`admin-dashboard-${Date.now()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, loadDashboard)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, loadDashboard)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, loadDashboard)
       .subscribe();
 
     return () => {
@@ -1957,44 +2123,34 @@ const AdminDashboard = () => {
     };
   }, []);
 
-  const trackedOrders = orders.filter((order) => normalizeAdminOrderStatus(order.status) !== 'CANCELLED');
-  const activeOrders = trackedOrders.filter((order) => {
-    const status = normalizeAdminOrderStatus(order.status);
-    return status === 'PENDING' || status === 'CONFIRMED';
-  });
-  const completedOrders = trackedOrders.filter((order) => normalizeAdminOrderStatus(order.status) === 'COMPLETED');
-  const pendingOrders = activeOrders.filter((order) => normalizeAdminOrderStatus(order.status) === 'PENDING');
-  const collectedRevenue = completedOrders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
-  const pendingValue = pendingOrders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
-  const lowStockProducts = products.filter((product) => Number(product.stock || 0) <= 10);
-
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Executive Dashboard</h1>
-          <p className="mt-1 text-sm text-[#858884]">Live operational figures from your Supabase database.</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#C08457]">Wen Appliances · Operations</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight">Dashboard</h1>
+          <p className="mt-1 text-sm text-[#858884]">A live view of orders, inventory, and customer support.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {lastUpdated && <span className="text-xs text-[#858884]">Updated {lastUpdated.toLocaleTimeString()}</span>}
-          <button type="button" onClick={() => navigate(`${adminBasePath}/tools` || '/tools')} className="inline-flex items-center gap-2 rounded-lg bg-[#9C6644] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#8A5A3C]"><Settings className="h-4 w-4" /> Admin tools</button>
+          <button type="button" onClick={() => navigate(`${adminBasePath}/new-product` || '/new-product')} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#9C6644] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#8A5A3C]"><Plus className="h-4 w-4" aria-hidden="true" /> Add appliance</button>
         </div>
       </div>
 
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300" role="alert">{error}</div>}
 
-      <div className="motion-stagger grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard title="Collected Revenue" value={formatMoney(collectedRevenue)} icon={DollarSign} />
-        <StatCard title="Pending Order Value" value={formatMoney(pendingValue)} icon={TrendingUp} color="text-emerald-400" />
-        <StatCard title="Active Orders" value={activeOrders.length} icon={ShoppingCart} />
-        <StatCard title="Attention Needed" value={`${pendingOrders.length} Pending | ${lowStockProducts.length} Low Stock`} icon={AlertTriangle} color="text-amber-400" />
+      <div className="motion-stagger grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+        <StatCard title="Collected · last 30 days" value={summary ? formatMoney(summary.revenue_30d) : '—'} icon={DollarSign} />
+        <StatCard title="Awaiting confirmation" value={summary?.pending_orders_30d ?? '—'} icon={ShoppingCart} color="text-amber-300" />
+        <StatCard title="Confirmed · in progress" value={summary?.confirmed_orders_30d ?? '—'} icon={TrendingUp} color="text-emerald-400" />
+        <StatCard title="Unread support messages" value={summary?.unread_customer_messages ?? '—'} icon={MessagesSquare} color="text-[#C08457]" />
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="col-span-2 overflow-hidden rounded-xl border border-[#24272A] bg-[#17191C] shadow-sm">
-          <div className="flex items-center justify-between border-b border-[#24272A] p-5"><div><h3 className="font-semibold text-[#F1F3EF]">Recent Transactions</h3><p className="mt-1 text-xs text-[#858884]">Completed, confirmed, and pending orders.</p></div><button type="button" onClick={() => navigate(`${adminBasePath}/orders` || '/orders')} className="text-xs font-semibold text-[#9C6644] hover:underline">Open orders</button></div>
+          <div className="flex items-center justify-between border-b border-[#24272A] p-5"><div><h3 className="font-semibold text-[#F1F3EF]">Recent orders</h3><p className="mt-1 text-xs text-[#858884]">Latest order activity from Supabase.</p></div><button type="button" onClick={() => navigate(`${adminBasePath}/orders` || '/orders')} className="inline-flex min-h-10 items-center gap-1 text-xs font-semibold text-[#C08457] hover:underline">Open orders <ChevronRight className="h-4 w-4" aria-hidden="true" /></button></div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[620px] text-left text-sm">
+            <table className="w-full min-w-[560px] text-left text-sm">
               <thead className="bg-[#0B0B0C] text-xs uppercase tracking-wider text-[#858884]"><tr><th className="px-5 py-3 font-medium">Order ID</th><th className="px-5 py-3 font-medium">Customer</th><th className="px-5 py-3 font-medium">Amount</th><th className="px-5 py-3 font-medium">Status</th></tr></thead>
               <tbody className="divide-y divide-[#24272A]">
                 {orders.slice(0, 5).map((order) => <tr key={order.id} className="transition-colors hover:bg-[#1D2023]"><td className="px-5 py-4 font-mono text-xs text-[#B8BAB7]">{order.id}</td><td className="px-5 py-4 text-[#F1F1EF]">{order.customer_name || 'Unnamed customer'}</td><td className="px-5 py-4 font-medium text-[#F1F1EF]">{formatMoney(order.total_amount)}</td><td className="px-5 py-4"><StatusBadge status={normalizeAdminOrderStatus(order.status)} /></td></tr>)}
@@ -2006,11 +2162,17 @@ const AdminDashboard = () => {
         </div>
 
         <div className="overflow-hidden rounded-xl border border-[#24272A] bg-[#17191C] shadow-sm">
-          <div className="flex items-center justify-between border-b border-[#24272A] p-5"><h3 className="flex items-center gap-2 font-semibold text-[#F1F3EF]"><AlertTriangle className="h-4 w-4 text-amber-500" /> Stock Alerts</h3><button type="button" onClick={() => navigate(`${adminBasePath}/tools` || '/tools')} className="text-xs font-semibold text-[#9C6644] hover:underline">View tools</button></div>
+          <div className="flex items-center justify-between border-b border-[#24272A] p-5"><h3 className="flex items-center gap-2 font-semibold text-[#F1F3EF]"><AlertTriangle className="h-4 w-4 text-amber-400" /> Stock alerts</h3><button type="button" onClick={() => navigate(`${adminBasePath}/products` || '/products')} className="text-xs font-semibold text-[#C08457] hover:underline">Manage inventory</button></div>
           <div className="space-y-4 p-5">
-            {lowStockProducts.slice(0, 8).map((product) => <div key={product.id} className="flex items-start justify-between gap-3 border-b border-[#24272A] pb-4 last:border-0 last:pb-0"><div className="min-w-0"><p className="line-clamp-1 text-sm font-medium text-[#F1F3EF]">{product.name || 'Unnamed appliance'}</p><p className="mt-1 text-xs font-mono text-[#858884]">{product.sku || '—'}</p></div><div className={`shrink-0 rounded px-2 py-1 text-xs font-bold ${Number(product.stock || 0) <= 0 ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>{Number(product.stock || 0)} left</div></div>)}
+            {lowStockProducts.slice(0, 8).map((product) => <div key={product.id} className="flex items-start justify-between gap-3 border-b border-[#24272A] pb-4 last:border-0 last:pb-0"><div className="min-w-0"><p className="line-clamp-1 text-sm font-medium text-[#F1F3EF]">{product.name || 'Unnamed appliance'}</p><p className="mt-1 text-xs text-[#858884]">{Number(product.stock || 0) <= 0 ? 'Out of stock' : 'Low stock'}</p></div><div className={`shrink-0 rounded px-2 py-1 text-xs font-bold ${Number(product.stock || 0) <= 0 ? 'bg-red-500/20 text-red-300' : 'bg-amber-500/20 text-amber-300'}`}>{Number(product.stock || 0)} left</div></div>)}
             {!loading && !lowStockProducts.length && <p className="py-4 text-center text-sm text-[#858884]">Inventory levels are healthy.</p>}
             {loading && <p className="py-4 text-center text-sm text-[#858884]">Loading inventory...</p>}
+          </div>
+          <div className="border-t border-[#24272A] p-5">
+            <button type="button" onClick={() => navigate(`${adminBasePath}/chats` || '/chats')} className="flex min-h-11 w-full items-center justify-between rounded-lg border border-[#3A3D40] px-3 py-2 text-left text-sm text-[#F1F3EF] transition hover:border-[#9C6644] hover:bg-[#0B0B0C]">
+              <span className="flex items-center gap-2"><MessagesSquare className="h-4 w-4 text-[#C08457]" aria-hidden="true" /> Support inbox</span>
+              <span className="rounded-full bg-[#9C6644] px-2 py-0.5 text-xs font-bold text-white">{summary?.unread_customer_messages ?? '—'}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -2048,11 +2210,45 @@ const ConfirmModal = ({ message, onConfirm, onCancel }) => (
 );
 
 const AdminProducts = () => {
-  const { products, saveProduct, deleteProduct, productsLoading, productsError, navigate, adminBasePath } = useContext(AppContext);
+  const { products, saveProduct, deleteProduct, setProductPublished, productsLoading, productsError, navigate, adminBasePath } = useContext(AppContext);
   const [editingProduct, setEditingProduct] = useState(null);
   const [saveError, setSaveError] = useState('');
   const [deletingProductId, setDeletingProductId] = useState(null);
   const [productToDelete, setProductToDelete] = useState(null);
+  const [visibilityUpdatingId, setVisibilityUpdatingId] = useState('');
+  const [inventorySearch, setInventorySearch] = useState(() => new URLSearchParams(window.location.search).get('search') || '');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [stockFilter, setStockFilter] = useState('all');
+  const [visibilityFilter, setVisibilityFilter] = useState('all');
+
+  useEffect(() => {
+    const onNavigate = (event) => {
+      const path = String(event.detail?.path || '');
+      if (!path.includes('/products')) return;
+      setInventorySearch(new URL(path, window.location.origin).searchParams.get('search') || '');
+    };
+    window.addEventListener('wen:navigate', onNavigate);
+    return () => window.removeEventListener('wen:navigate', onNavigate);
+  }, []);
+
+  const categories = useMemo(() => [...new Set(products.map((product) => product.category).filter(Boolean))].sort(), [products]);
+  const filteredProducts = useMemo(() => {
+    const query = inventorySearch.trim().toLowerCase();
+    return products.filter((product) => {
+      const matchesSearch = !query || [product.name, product.category, product.sku, product.id]
+        .some((value) => String(value || '').toLowerCase().includes(query));
+      const matchesCategory = categoryFilter === 'all' || product.category === categoryFilter;
+      const stock = Number(product.stock || 0);
+      const matchesStock = stockFilter === 'all'
+        || (stockFilter === 'in-stock' && stock > 10)
+        || (stockFilter === 'low-stock' && stock > 0 && stock <= 10)
+        || (stockFilter === 'out-of-stock' && stock <= 0);
+      const matchesVisibility = visibilityFilter === 'all'
+        || (visibilityFilter === 'published' && product.is_published !== false)
+        || (visibilityFilter === 'hidden' && product.is_published === false);
+      return matchesSearch && matchesCategory && matchesStock && matchesVisibility;
+    });
+  }, [products, inventorySearch, categoryFilter, stockFilter, visibilityFilter]);
 
   const handleSave = async (updatedProduct) => {
     try {
@@ -2089,6 +2285,19 @@ const AdminProducts = () => {
     }
   };
 
+  const handleVisibilityChange = async (product) => {
+    const nextIsPublished = product.is_published === false;
+    setVisibilityUpdatingId(product.id);
+    try {
+      await setProductPublished(product.id, nextIsPublished);
+      toast.success(nextIsPublished ? 'Product is now visible in the storefront.' : 'Product hidden from the storefront.');
+    } catch (error) {
+      toast.error(error.message || 'Unable to update product visibility.');
+    } finally {
+      setVisibilityUpdatingId('');
+    }
+  };
+
   if (editingProduct) {
     return (
       <div className="space-y-4">
@@ -2115,6 +2324,38 @@ const AdminProducts = () => {
 
       {productsError && <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-lg p-4 text-sm">{productsError}</div>}
 
+      <div className="grid gap-3 rounded-xl border border-[#24272A] bg-[#17191C] p-4 md:grid-cols-2 xl:grid-cols-4">
+        <label className="relative block md:col-span-2 xl:col-span-1">
+          <span className="sr-only">Search inventory</span>
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#858884]" aria-hidden="true" />
+          <input value={inventorySearch} onChange={(event) => setInventorySearch(event.target.value)} placeholder="Search name or category" className="w-full rounded-lg border border-[#3A3D40] bg-[#0B0B0C] py-2.5 pl-9 pr-3 text-sm text-[#F1F3EF] outline-none placeholder:text-[#777B78] focus:border-[#9C6644]" />
+        </label>
+        <label>
+          <span className="sr-only">Filter by category</span>
+          <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="w-full rounded-lg border border-[#3A3D40] bg-[#0B0B0C] px-3 py-2.5 text-sm text-[#F1F3EF] outline-none focus:border-[#9C6644]">
+            <option value="all">All categories</option>
+            {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+          </select>
+        </label>
+        <label>
+          <span className="sr-only">Filter by stock</span>
+          <select value={stockFilter} onChange={(event) => setStockFilter(event.target.value)} className="w-full rounded-lg border border-[#3A3D40] bg-[#0B0B0C] px-3 py-2.5 text-sm text-[#F1F3EF] outline-none focus:border-[#9C6644]">
+            <option value="all">Any stock level</option>
+            <option value="in-stock">In stock (&gt; 10)</option>
+            <option value="low-stock">Low stock (1–10)</option>
+            <option value="out-of-stock">Out of stock</option>
+          </select>
+        </label>
+        <label>
+          <span className="sr-only">Filter by storefront visibility</span>
+          <select value={visibilityFilter} onChange={(event) => setVisibilityFilter(event.target.value)} className="w-full rounded-lg border border-[#3A3D40] bg-[#0B0B0C] px-3 py-2.5 text-sm text-[#F1F3EF] outline-none focus:border-[#9C6644]">
+            <option value="all">Published and hidden</option>
+            <option value="published">Published</option>
+            <option value="hidden">Hidden</option>
+          </select>
+        </label>
+      </div>
+
       <div className="bg-[#17191C] border border-[#24272A] rounded-xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -2131,7 +2372,7 @@ const AdminProducts = () => {
             <tbody className="divide-y divide-[#24272A]">
               {productsLoading ? (
                 <tr><td colSpan="6" className="px-6 py-10 text-center text-[#858884]">Loading products...</td></tr>
-              ) : products.map(p => (
+              ) : filteredProducts.map(p => (
                 <tr key={p.id} className="hover:bg-[#1D2023] transition-colors">
                   <td className="px-6 py-4">
                      {p.image ? <img src={p.image} alt="" className="w-10 h-10 object-cover rounded bg-white" /> : <ProductPlaceholder dark className="w-10 h-10 rounded" />}
@@ -2149,10 +2390,20 @@ const AdminProducts = () => {
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    <StatusBadge status={p.status} />
+                    <div className="flex flex-col items-start gap-1.5">
+                      <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${p.is_published === false ? 'bg-[#24272A] text-[#B8BAB7]' : 'bg-emerald-500/10 text-emerald-300'}`}>
+                        {p.is_published === false ? 'Hidden' : 'Published'}
+                      </span>
+                      <span className={`text-[11px] ${Number(p.stock || 0) <= 0 ? 'text-red-300' : Number(p.stock || 0) <= 10 ? 'text-amber-300' : 'text-[#858884]'}`}>
+                        {Number(p.stock || 0) <= 0 ? 'Out of stock' : Number(p.stock || 0) <= 10 ? 'Low stock' : 'In stock'}
+                      </span>
+                    </div>
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="inline-flex items-center gap-1">
+                    <button type="button" onClick={() => handleVisibilityChange(p)} disabled={visibilityUpdatingId === p.id} className="rounded-lg p-2 text-[#858884] transition-colors hover:bg-[#24272A] hover:text-[#F1F3EF] disabled:cursor-wait disabled:opacity-50" title={p.is_published === false ? `Publish ${p.name}` : `Hide ${p.name}`} aria-label={p.is_published === false ? `Publish ${p.name}` : `Hide ${p.name}`}>
+                      {visibilityUpdatingId === p.id ? <span className="block h-4 w-4 animate-spin rounded-full border-2 border-[#9C6644] border-t-transparent" /> : p.is_published === false ? <Eye className="h-4 w-4" aria-hidden="true" /> : <EyeOff className="h-4 w-4" aria-hidden="true" />}
+                    </button>
                     <button type="button" onClick={() => setEditingProduct(p)} className="text-[#858884] hover:text-[#9C6644] p-2 transition-colors" title={`Edit ${p.name}`} aria-label={`Edit ${p.name}`}>
                       <Edit className="h-4 w-4" />
                     </button>
@@ -2163,6 +2414,7 @@ const AdminProducts = () => {
                   </td>
                 </tr>
               ))}
+              {!productsLoading && filteredProducts.length === 0 && <tr><td colSpan="6" className="px-6 py-10 text-center text-sm text-[#858884]">No products match these filters.</td></tr>}
             </tbody>
           </table>
         </div>

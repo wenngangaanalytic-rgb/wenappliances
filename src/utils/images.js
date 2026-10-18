@@ -16,6 +16,7 @@ export const normalizeProduct = (product = {}) => {
   const gallery = parseImageList(product.gallery);
   const allImages = [...new Set([image, ...storedImages, ...gallery].filter(Boolean))];
   const stock = Number(product.stock ?? 0);
+  const isPublished = product.is_published !== false;
 
   return {
     ...product,
@@ -26,7 +27,8 @@ export const normalizeProduct = (product = {}) => {
     price: Number(product.price ?? 0),
     cost: Number(product.cost ?? 0),
     stock,
-    status: String(product.status || (stock > 0 ? 'PUBLISHED' : 'OUT_OF_STOCK')).toUpperCase(),
+    is_published: isPublished,
+    status: String(product.status || (!isPublished ? 'UNPUBLISHED' : stock > 0 ? 'PUBLISHED' : 'OUT_OF_STOCK')).toUpperCase(),
     image,
     images: allImages,
     gallery: allImages
