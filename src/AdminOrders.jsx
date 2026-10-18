@@ -149,6 +149,8 @@ export default function AdminOrders() {
   const [priceDraft, setPriceDraft] = useState('');
   const [savingPriceId, setSavingPriceId] = useState('');
   const [adjustedOrderIds, setAdjustedOrderIds] = useState(new Set());
+  const pendingOrdersOnPage = orders.filter((order) => normalizeStatus(order.status) === 'Pending').length;
+  const confirmedOrdersOnPage = orders.filter((order) => normalizeStatus(order.status) === 'Confirmed').length;
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -461,24 +463,47 @@ export default function AdminOrders() {
 
   return (
     <section className="space-y-6" aria-labelledby="admin-orders-title">
-      <div>
-        <p className="text-sm font-semibold uppercase tracking-wider text-[#9C6644]">Operations</p>
-        <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <span className="mt-1 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#9C6644]/30 bg-[#9C6644]/10 text-[#C08457]">
+            <Package className="h-5 w-5" aria-hidden="true" />
+          </span>
           <div>
-            <h1 id="admin-orders-title" className="text-2xl font-bold tracking-tight text-[#F1F3EF]">Order management</h1>
-            <p className="mt-1 text-sm text-[#858884]">Review customer details, update fulfillment status, and record negotiated pricing.</p>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#9C6644]">Operations / Orders</p>
+            <h1 id="admin-orders-title" className="mt-1 text-2xl font-bold tracking-tight text-[#F1F3EF]">Order management</h1>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-[#858884]">Review customer details, update fulfillment status, and record negotiated pricing.</p>
           </div>
-          {!loading && activeOrderCount > 0 && <span className="rounded-full border border-[#24272A] bg-[#17191C] px-3 py-1 text-xs font-semibold text-[#B8BAB7]">{activeOrderCount} active order{activeOrderCount === 1 ? '' : 's'}</span>}
         </div>
+        {!loading && <span className="inline-flex items-center gap-2 rounded-full border border-[#9C6644]/30 bg-[#9C6644]/10 px-3 py-1.5 text-xs font-semibold text-[#C08457]"><span className="h-2 w-2 rounded-full bg-[#C08457]" aria-hidden="true" />{activeOrderCount} active order{activeOrderCount === 1 ? '' : 's'}</span>}
       </div>
 
-      {deliveryFieldsReady === false && <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200" role="status">Delivery assignment and private document controls are waiting for the Supabase migration <code>20261018000000_admin_dashboard_operations.sql</code>.</div>}
+      {deliveryFieldsReady === false && <div className="wen-warning-panel rounded-lg border p-4 text-sm" role="status">Delivery assignment and private document controls are waiting for the Supabase migration <code className="font-semibold">20261018000000_admin_dashboard_operations.sql</code>.</div>}
 
-      <label className="relative block max-w-xl">
-        <span className="sr-only">Search orders by customer or order ID</span>
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#858884]" aria-hidden="true" />
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search customer or order ID" className="min-h-11 w-full rounded-xl border border-[#3A3D40] bg-[#17191C] py-2.5 pl-10 pr-3 text-sm text-[#F1F3EF] outline-none placeholder:text-[#777B78] focus:border-[#9C6644]" />
-      </label>
+      <div className="grid gap-3 sm:grid-cols-3" role="group" aria-label="Order summary">
+        {[
+          { label: 'Matching orders', value: loading ? '—' : totalOrders, icon: Package },
+          { label: 'Pending on this page', value: loading ? '—' : pendingOrdersOnPage, icon: Calendar },
+          { label: 'Confirmed on this page', value: loading ? '—' : confirmedOrdersOnPage, icon: CheckCircle2 }
+        ].map(({ label, value, icon: Icon }, index) => (
+          <div key={label} className="flex min-w-0 items-center gap-3 rounded-xl border border-[#24272A] bg-[#17191C] px-4 py-3 shadow-sm transition-colors hover:border-[#9C6644]/40">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#9C6644]/10 text-[#C08457]">
+              <Icon className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-xs font-medium text-[#858884]">{label}</p>
+              <p className={`mt-0.5 text-lg font-bold tabular-nums ${index === 1 && Number(value) > 0 ? 'wen-warning-foreground' : 'text-[#F1F3EF]'}`}>{value}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-xl border border-[#24272A] bg-[#17191C] p-3 shadow-sm sm:p-4">
+        <label className="relative block max-w-2xl">
+          <span className="sr-only">Search orders by customer or order ID</span>
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#858884]" aria-hidden="true" />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search customer or order ID" className="min-h-11 w-full rounded-lg border border-[#3A3D40] bg-[#0B0B0C] py-2.5 pl-10 pr-3 text-sm text-[#F1F3EF] outline-none placeholder:text-[#777B78] transition focus:border-[#9C6644] focus:ring-2 focus:ring-[#9C6644]/20" />
+        </label>
+      </div>
 
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300" role="alert">{error}</div>}
 
@@ -487,10 +512,13 @@ export default function AdminOrders() {
           {[1, 2, 3].map((item) => <div key={item} className="h-32 animate-pulse rounded-xl border border-[#24272A] bg-[#17191C]" />)}
         </div>
       ) : orders.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-[#4A5568] bg-[#17191C] p-12 text-center">
-          <Package className="mx-auto h-10 w-10 text-[#858884]" aria-hidden="true" />
+        <div className="rounded-2xl border border-dashed border-[#4A5568] bg-[#17191C] px-6 py-14 text-center shadow-sm sm:px-12">
+          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#9C6644]/10 text-[#C08457]">
+            <Package className="h-7 w-7" aria-hidden="true" />
+          </span>
           <h2 className="mt-4 text-lg font-semibold text-[#F1F3EF]">{debouncedSearch.trim() ? 'No matching orders' : 'No orders yet'}</h2>
-          <p className="mt-2 text-sm text-[#858884]">{debouncedSearch.trim() ? 'Try another customer name, email, or complete order ID.' : 'New customer orders will appear here after checkout.'}</p>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#858884]">{debouncedSearch.trim() ? 'Try another customer name, email, or complete order ID.' : 'Orders will appear here when customers complete checkout.'}</p>
+          {debouncedSearch.trim() && <button type="button" onClick={() => setSearch('')} className="mt-5 inline-flex min-h-10 items-center justify-center rounded-lg border border-[#9C6644]/40 px-4 text-sm font-semibold text-[#C08457] transition hover:bg-[#9C6644]/10">Clear search</button>}
         </div>
       ) : (
         <div className="space-y-4">
@@ -503,7 +531,7 @@ export default function AdminOrders() {
             const isPriceAdjusted = adjustedOrderIds.has(order.id) || Math.abs(Number(order.total_amount || 0) - itemsSubtotal) > 0.01;
 
             return (
-              <article key={order.id} className="overflow-hidden rounded-xl border border-[#24272A] bg-[#17191C] shadow-sm">
+              <article key={order.id} className="overflow-hidden rounded-xl border border-[#24272A] bg-[#17191C] shadow-sm transition duration-200 hover:border-[#9C6644]/40 hover:shadow-md">
                 <div className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
                   <div className="flex min-w-0 items-start gap-3">
                     <button type="button" onClick={() => toggleOrder(order.id)} className="mt-1 rounded-md p-1 text-[#B8BAB7] transition hover:bg-[#24272A] hover:text-[#F1F3EF]" aria-expanded={isExpanded} aria-label={isExpanded ? 'Collapse order' : 'Expand order'}>

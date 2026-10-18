@@ -226,7 +226,7 @@ export default function AdminTools() {
         </div>
       </div>
 
-      {error && <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200" role="alert">{error}</div>}
+      {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300" role="alert">{error}</div>}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <ToolMetric icon={Boxes} label="Catalog products" value={products.length} />
@@ -273,7 +273,7 @@ export default function AdminTools() {
             <h2 className="font-semibold text-[#F1F3EF]">Low-stock watchlist</h2>
             <p className="mt-1 text-sm text-[#858884]">Products with ten or fewer units remaining.</p>
           </div>
-          <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-300">{lowStockProducts.length} needs attention</span>
+          <span className="wen-warning-badge rounded-full px-3 py-1 text-xs font-semibold">{lowStockProducts.length} needs attention</span>
         </div>
         {loading ? (
           <div className="flex items-center justify-center p-10 text-sm text-[#858884]"><LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Loading inventory...</div>
@@ -284,7 +284,7 @@ export default function AdminTools() {
             <table className="w-full min-w-[560px] text-left text-sm">
               <thead className="bg-[#0B0B0C] text-xs uppercase tracking-wider text-[#858884]"><tr><th className="px-5 py-3 font-medium">Product</th><th className="px-5 py-3 font-medium">Category</th><th className="px-5 py-3 text-right font-medium">Price</th><th className="px-5 py-3 text-right font-medium">Remaining</th></tr></thead>
               <tbody className="divide-y divide-[#24272A]">
-                {lowStockProducts.slice(0, 12).map((product) => <tr key={product.id} className="hover:bg-[#1D2023]"><td className="px-5 py-3 font-semibold text-[#F1F3EF]">{product.name || 'Unnamed appliance'}</td><td className="px-5 py-3 text-[#B8BAB7]">{product.category || 'Other'}</td><td className="px-5 py-3 text-right text-[#B8BAB7]">{formatMoney(product.price)}</td><td className={`px-5 py-3 text-right font-bold ${Number(product.stock || 0) <= 0 ? 'text-red-400' : 'text-amber-300'}`}>{Number(product.stock || 0)}</td></tr>)}
+                {lowStockProducts.slice(0, 12).map((product) => <tr key={product.id} className="hover:bg-[#1D2023]"><td className="px-5 py-3 font-semibold text-[#F1F3EF]">{product.name || 'Unnamed appliance'}</td><td className="px-5 py-3 text-[#B8BAB7]">{product.category || 'Other'}</td><td className="px-5 py-3 text-right text-[#B8BAB7]">{formatMoney(product.price)}</td><td className={`px-5 py-3 text-right font-bold ${Number(product.stock || 0) <= 0 ? 'text-red-400' : 'wen-warning-foreground'}`}>{Number(product.stock || 0)}</td></tr>)}
               </tbody>
             </table>
           </div>
@@ -309,7 +309,7 @@ export default function AdminTools() {
           <div><h2 className="font-semibold text-[#F1F3EF]">Recent admin activity</h2><p className="mt-1 text-sm text-[#858884]">Database-recorded changes to products and order operations.</p></div>
           <FileClock className="h-5 w-5 shrink-0 text-[#9C6644]" aria-hidden="true" />
         </div>
-        {auditLogState === 'migration-needed' ? <p className="p-5 text-sm text-amber-200">Apply the admin operations Supabase migration to enable the audit trail.</p>
+        {auditLogState === 'migration-needed' ? <p className="wen-warning-foreground p-5 text-sm">Apply the admin operations Supabase migration to enable the audit trail.</p>
           : auditLogState === 'unavailable' ? <p className="p-5 text-sm text-[#858884]">Audit events are unavailable to this session. Check the administrator role and Supabase policies.</p>
             : auditLogs.length ? <ul className="divide-y divide-[#24272A]">{auditLogs.map((entry) => <li key={entry.id} className="flex flex-col gap-1 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#F1F3EF]">{entry.action.replaceAll('.', ' ')} <span className="font-normal text-[#858884]">· {entry.entity} · {String(entry.entity_id).slice(0, 12)}</span></p><p className="text-xs text-[#777B78]">{entry.actor_id ? `Admin ${String(entry.actor_id).slice(0, 8)}` : 'System'}{entry.details?.after?.status ? ` · ${entry.details.after.status}` : ''}</p></div><time className="shrink-0 text-xs text-[#858884]" dateTime={entry.created_at}>{formatDate(entry.created_at)}</time></li>)}</ul>
               : <p className="p-5 text-sm text-[#858884]">No product or order changes have been recorded yet.</p>}

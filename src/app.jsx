@@ -314,6 +314,7 @@ export default function App() {
   const [products, setProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(true);
   const [productsError, setProductsError] = useState('');
+  const [productVisibilityAvailable, setProductVisibilityAvailable] = useState(null);
   const [orders, setOrders] = useState([]);
   const [trackingPrefill, setTrackingPrefill] = useState(null);
   
@@ -399,9 +400,12 @@ export default function App() {
 
       let { data, error } = await buildProductsQuery(true);
       if (isMissingDatabaseColumn(error, 'is_published')) {
+        setProductVisibilityAvailable(false);
         // Keep the storefront usable while the additive visibility migration
         // is being applied. Existing products remain visible until then.
         ({ data, error } = await buildProductsQuery(false));
+      } else if (!error) {
+        setProductVisibilityAvailable(true);
       }
 
       if (error) throw error;
@@ -517,7 +521,10 @@ export default function App() {
     if (error) {
       setProducts(previousProducts);
       if (isMissingDatabaseColumn(error, 'is_published')) {
-        throw new Error('Apply the Supabase admin dashboard migration before changing product visibility.');
+        setProductVisibilityAvailable(false);
+        const migrationError = new Error('Apply the Supabase admin dashboard migration before changing product visibility.');
+        migrationError.code = 'ADMIN_DASHBOARD_MIGRATION_REQUIRED';
+        throw migrationError;
       }
       throw error;
     }
@@ -591,7 +598,7 @@ export default function App() {
 
   const contextValue = {
     user, login, logout,
-    products, setProducts, saveProduct, deleteProduct, setProductPublished, loadProducts, productsLoading, productsError,
+    products, setProducts, saveProduct, deleteProduct, setProductPublished, loadProducts, productsLoading, productsError, productVisibilityAvailable,
     orders, setOrders,
     cart, addToCart, updateCartQty, clearCart, cartTotal, cartItemCount, isCartOpen, setIsCartOpen,
     navigate, currentRoute,
@@ -1940,6 +1947,11 @@ const AdminLayout = ({ children }) => {
     ] }
   ];
 
+  const currentPageLabel = navGroups.flatMap((group) => group.items).find((item) => (
+    currentRoute.includes(item.id)
+    || ((adminBasePath ? currentRoute === adminBasePath : currentRoute === '/') && item.id === 'dashboard')
+  ))?.label || (currentRoute.includes('new-product') ? 'New product' : 'Admin workspace');
+
   const renderNavigation = () => navGroups.map((group) => {
     const isCollapsed = Boolean(collapsedGroups[group.id]);
     return <section key={group.id} className="space-y-1">
@@ -1989,11 +2001,12 @@ const AdminLayout = ({ children }) => {
              <button type="button" onClick={() => setIsMobileNavOpen((open) => !open)} className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-lg border border-[#4A5568]/40 bg-[#24272A] text-[#F1F1EF] hover:bg-[#30343A] lg:hidden" aria-label={isMobileNavOpen ? 'Close administrator navigation' : 'Open administrator navigation'} aria-expanded={isMobileNavOpen}>
                {isMobileNavOpen ? <X className="h-4 w-4" aria-hidden="true" /> : <Menu className="h-4 w-4" aria-hidden="true" />}
              </button>
-             <Lock className="hidden h-4 w-4 shrink-0 xl:block" />
-             <span className="hidden truncate xl:inline">Wen Appliances Admin</span>
+             <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#9C6644]/30 bg-[#9C6644]/10 text-[#C08457]" aria-hidden="true"><Lock className="h-4 w-4" /></span>
+             <span className="min-w-0 max-w-[40vw] truncate text-xs font-semibold text-[#F1F3EF] sm:text-sm xl:hidden">{currentPageLabel}</span>
+             <span className="hidden min-w-0 xl:block"><span className="block truncate text-xs font-semibold text-[#F1F3EF]">Wen Appliances Admin</span><span className="mt-0.5 block truncate text-[10px] text-[#858884]">{currentPageLabel}</span></span>
            </div>
              <div className="flex min-w-0 items-center justify-end gap-2 sm:gap-3">
-             <span className="hidden items-center gap-2 rounded-full border border-[#3A3D40] px-2.5 py-2 text-[11px] text-[#B8BAB7] xl:inline-flex" title={connectionStatus === 'online' ? 'Supabase is reachable' : connectionStatus === 'checking' ? 'Checking Supabase connectivity' : 'Connection needs attention'}><span className={`h-2 w-2 rounded-full ${connectionStatus === 'online' ? 'bg-emerald-400' : connectionStatus === 'checking' ? 'bg-amber-400' : 'bg-red-400'}`} />{connectionStatus === 'online' ? 'Connected' : connectionStatus === 'checking' ? 'Checking' : 'Connection issue'}</span>
+             <span className="hidden items-center gap-2 rounded-full border border-[#3A3D40] px-2.5 py-2 text-[11px] text-[#B8BAB7] xl:inline-flex" title={connectionStatus === 'online' ? 'Supabase is reachable' : connectionStatus === 'checking' ? 'Checking Supabase connectivity' : 'Connection needs attention'}><span className={`h-2 w-2 rounded-full ${connectionStatus === 'online' ? 'bg-emerald-400' : connectionStatus === 'checking' ? 'bg-[#C08457]' : 'bg-red-400'}`} />{connectionStatus === 'online' ? 'Connected' : connectionStatus === 'checking' ? 'Checking' : 'Connection issue'}</span>
              <AdminGlobalSearch navigate={navigate} adminBasePath={adminBasePath} />
              <button type="button" onClick={() => navigate(`${adminBasePath}/new-product` || '/new-product')} className="hidden min-h-10 items-center gap-2 rounded-lg bg-[#9C6644] px-3 text-sm font-semibold text-white transition hover:bg-[#8A5A3C] sm:inline-flex"><Plus className="h-4 w-4" aria-hidden="true" /><span className="hidden xl:inline">Add appliance</span><span className="xl:hidden">Add</span></button>
              <ChatNotificationBell />
@@ -2141,7 +2154,7 @@ const AdminDashboard = () => {
 
       <div className="motion-stagger grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
         <StatCard title="Collected · last 30 days" value={summary ? formatMoney(summary.revenue_30d) : '—'} icon={DollarSign} />
-        <StatCard title="Awaiting confirmation" value={summary?.pending_orders_30d ?? '—'} icon={ShoppingCart} color="text-amber-300" />
+        <StatCard title="Awaiting confirmation" value={summary?.pending_orders_30d ?? '—'} icon={ShoppingCart} color="wen-warning-foreground" />
         <StatCard title="Confirmed · in progress" value={summary?.confirmed_orders_30d ?? '—'} icon={TrendingUp} color="text-emerald-400" />
         <StatCard title="Unread support messages" value={summary?.unread_customer_messages ?? '—'} icon={MessagesSquare} color="text-[#C08457]" />
       </div>
@@ -2162,9 +2175,9 @@ const AdminDashboard = () => {
         </div>
 
         <div className="overflow-hidden rounded-xl border border-[#24272A] bg-[#17191C] shadow-sm">
-          <div className="flex items-center justify-between border-b border-[#24272A] p-5"><h3 className="flex items-center gap-2 font-semibold text-[#F1F3EF]"><AlertTriangle className="h-4 w-4 text-amber-400" /> Stock alerts</h3><button type="button" onClick={() => navigate(`${adminBasePath}/products` || '/products')} className="text-xs font-semibold text-[#C08457] hover:underline">Manage inventory</button></div>
+          <div className="flex items-center justify-between border-b border-[#24272A] p-5"><h3 className="flex items-center gap-2 font-semibold text-[#F1F3EF]"><AlertTriangle className="wen-warning-foreground h-4 w-4" /> Stock alerts</h3><button type="button" onClick={() => navigate(`${adminBasePath}/products` || '/products')} className="text-xs font-semibold text-[#C08457] hover:underline">Manage inventory</button></div>
           <div className="space-y-4 p-5">
-            {lowStockProducts.slice(0, 8).map((product) => <div key={product.id} className="flex items-start justify-between gap-3 border-b border-[#24272A] pb-4 last:border-0 last:pb-0"><div className="min-w-0"><p className="line-clamp-1 text-sm font-medium text-[#F1F3EF]">{product.name || 'Unnamed appliance'}</p><p className="mt-1 text-xs text-[#858884]">{Number(product.stock || 0) <= 0 ? 'Out of stock' : 'Low stock'}</p></div><div className={`shrink-0 rounded px-2 py-1 text-xs font-bold ${Number(product.stock || 0) <= 0 ? 'bg-red-500/20 text-red-300' : 'bg-amber-500/20 text-amber-300'}`}>{Number(product.stock || 0)} left</div></div>)}
+            {lowStockProducts.slice(0, 8).map((product) => <div key={product.id} className="flex items-start justify-between gap-3 border-b border-[#24272A] pb-4 last:border-0 last:pb-0"><div className="min-w-0"><p className="line-clamp-1 text-sm font-medium text-[#F1F3EF]">{product.name || 'Unnamed appliance'}</p><p className="mt-1 text-xs text-[#858884]">{Number(product.stock || 0) <= 0 ? 'Out of stock' : 'Low stock'}</p></div><div className={`shrink-0 rounded px-2 py-1 text-xs font-bold ${Number(product.stock || 0) <= 0 ? 'bg-red-500/20 text-red-300' : 'wen-warning-badge'}`}>{Number(product.stock || 0)} left</div></div>)}
             {!loading && !lowStockProducts.length && <p className="py-4 text-center text-sm text-[#858884]">Inventory levels are healthy.</p>}
             {loading && <p className="py-4 text-center text-sm text-[#858884]">Loading inventory...</p>}
           </div>
@@ -2210,7 +2223,7 @@ const ConfirmModal = ({ message, onConfirm, onCancel }) => (
 );
 
 const AdminProducts = () => {
-  const { products, saveProduct, deleteProduct, setProductPublished, productsLoading, productsError, navigate, adminBasePath } = useContext(AppContext);
+  const { products, saveProduct, deleteProduct, setProductPublished, productsLoading, productsError, productVisibilityAvailable, navigate, adminBasePath } = useContext(AppContext);
   const [editingProduct, setEditingProduct] = useState(null);
   const [saveError, setSaveError] = useState('');
   const [deletingProductId, setDeletingProductId] = useState(null);
@@ -2220,6 +2233,7 @@ const AdminProducts = () => {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [stockFilter, setStockFilter] = useState('all');
   const [visibilityFilter, setVisibilityFilter] = useState('all');
+  const visibilityMigrationRequired = productVisibilityAvailable === false;
 
   useEffect(() => {
     const onNavigate = (event) => {
@@ -2286,12 +2300,14 @@ const AdminProducts = () => {
   };
 
   const handleVisibilityChange = async (product) => {
+    if (visibilityMigrationRequired) return;
     const nextIsPublished = product.is_published === false;
     setVisibilityUpdatingId(product.id);
     try {
       await setProductPublished(product.id, nextIsPublished);
       toast.success(nextIsPublished ? 'Product is now visible in the storefront.' : 'Product hidden from the storefront.');
     } catch (error) {
+      if (error.code === 'ADMIN_DASHBOARD_MIGRATION_REQUIRED') return;
       toast.error(error.message || 'Unable to update product visibility.');
     } finally {
       setVisibilityUpdatingId('');
@@ -2323,6 +2339,11 @@ const AdminProducts = () => {
       </div>
 
       {productsError && <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-lg p-4 text-sm">{productsError}</div>}
+
+      {visibilityMigrationRequired && <div role="alert" className="wen-warning-panel rounded-xl border p-4 text-sm">
+        <p className="font-semibold">Product publishing is unavailable until the Supabase migration is applied.</p>
+        <p className="wen-warning-muted mt-1">Inventory remains available, but Publish/Hide is disabled. Apply <code className="rounded bg-black/10 px-1.5 py-0.5 font-semibold">20261018000000_admin_dashboard_operations.sql</code> in Supabase, then refresh this page.</p>
+      </div>}
 
       <div className="grid gap-3 rounded-xl border border-[#24272A] bg-[#17191C] p-4 md:grid-cols-2 xl:grid-cols-4">
         <label className="relative block md:col-span-2 xl:col-span-1">
@@ -2385,7 +2406,7 @@ const AdminProducts = () => {
                     {formatMoney(p.price)}
                   </td>
                   <td className="px-6 py-4 text-center">
-                    <span className={`inline-flex items-center justify-center px-2 py-1 rounded text-xs font-bold ${p.stock <= 0 ? 'bg-red-500/20 text-red-400' : (p.stock < 10 ? 'bg-amber-500/20 text-amber-400' : 'bg-[#24272A] text-[#B8BAB7]')}`}>
+                    <span className={`inline-flex items-center justify-center px-2 py-1 rounded text-xs font-bold ${p.stock <= 0 ? 'bg-red-500/20 text-red-400' : (p.stock < 10 ? 'wen-warning-badge' : 'bg-[#24272A] text-[#B8BAB7]')}`}>
                        {p.stock}
                     </span>
                   </td>
@@ -2394,14 +2415,14 @@ const AdminProducts = () => {
                       <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${p.is_published === false ? 'bg-[#24272A] text-[#B8BAB7]' : 'bg-emerald-500/10 text-emerald-300'}`}>
                         {p.is_published === false ? 'Hidden' : 'Published'}
                       </span>
-                      <span className={`text-[11px] ${Number(p.stock || 0) <= 0 ? 'text-red-300' : Number(p.stock || 0) <= 10 ? 'text-amber-300' : 'text-[#858884]'}`}>
+                      <span className={`text-[11px] ${Number(p.stock || 0) <= 0 ? 'text-red-300' : Number(p.stock || 0) <= 10 ? 'wen-warning-foreground' : 'text-[#858884]'}`}>
                         {Number(p.stock || 0) <= 0 ? 'Out of stock' : Number(p.stock || 0) <= 10 ? 'Low stock' : 'In stock'}
                       </span>
                     </div>
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="inline-flex items-center gap-1">
-                    <button type="button" onClick={() => handleVisibilityChange(p)} disabled={visibilityUpdatingId === p.id} className="rounded-lg p-2 text-[#858884] transition-colors hover:bg-[#24272A] hover:text-[#F1F3EF] disabled:cursor-wait disabled:opacity-50" title={p.is_published === false ? `Publish ${p.name}` : `Hide ${p.name}`} aria-label={p.is_published === false ? `Publish ${p.name}` : `Hide ${p.name}`}>
+                    <button type="button" onClick={() => handleVisibilityChange(p)} disabled={visibilityMigrationRequired || visibilityUpdatingId === p.id} className="rounded-lg p-2 text-[#858884] transition-colors hover:bg-[#24272A] hover:text-[#F1F3EF] disabled:cursor-not-allowed disabled:opacity-50" title={visibilityMigrationRequired ? 'Apply the Supabase admin dashboard migration to change product visibility.' : p.is_published === false ? `Publish ${p.name}` : `Hide ${p.name}`} aria-label={visibilityMigrationRequired ? `Product visibility unavailable until the Supabase migration is applied: ${p.name}` : p.is_published === false ? `Publish ${p.name}` : `Hide ${p.name}`}>
                       {visibilityUpdatingId === p.id ? <span className="block h-4 w-4 animate-spin rounded-full border-2 border-[#9C6644] border-t-transparent" /> : p.is_published === false ? <Eye className="h-4 w-4" aria-hidden="true" /> : <EyeOff className="h-4 w-4" aria-hidden="true" />}
                     </button>
                     <button type="button" onClick={() => setEditingProduct(p)} className="text-[#858884] hover:text-[#9C6644] p-2 transition-colors" title={`Edit ${p.name}`} aria-label={`Edit ${p.name}`}>
@@ -2932,7 +2953,7 @@ const StatusBadge = ({ status }) => {
     DRAFT: 'bg-gray-500/10 text-gray-400 border border-gray-500/20',
     ARCHIVED: 'bg-gray-800 text-gray-500 border border-gray-700',
     OUT_OF_STOCK: 'bg-red-500/10 text-red-400 border border-red-500/20',
-    PENDING: 'bg-amber-500/10 text-amber-400 border border-amber-500/20',
+    PENDING: 'wen-warning-badge',
     PROCESSING: 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
     SHIPPED: 'bg-purple-500/10 text-purple-400 border border-purple-500/20',
     DELIVERED: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
