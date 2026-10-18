@@ -633,8 +633,28 @@ html[data-theme='dark'] .storefront-shell {
 }
 
 .store-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   border-bottom: 1px solid var(--store-line);
-  background: var(--store-surface);
+  background-color: #F5F5F7;
+  background-image:
+    linear-gradient(90deg, rgba(245, 245, 247, 0.98) 0%, rgba(245, 245, 247, 0.94) 34%, rgba(245, 245, 247, 0.76) 62%, rgba(245, 245, 247, 0.34) 100%),
+    url('/images/wen-appliances-home-background.webp');
+  background-position: center, 62% center;
+  background-size: cover, cover;
+}
+
+html[data-theme='dark'] .store-hero {
+  background-color: #0F1011;
+  background-image:
+    linear-gradient(90deg, rgba(15, 16, 17, 0.98) 0%, rgba(15, 16, 17, 0.9) 34%, rgba(15, 16, 17, 0.62) 62%, rgba(15, 16, 17, 0.24) 100%),
+    url('/images/wen-appliances-home-background.webp');
+}
+
+.store-hero__inner {
+  position: relative;
+  z-index: 1;
 }
 
 .store-hero__title {
@@ -645,6 +665,22 @@ html[data-theme='dark'] .storefront-shell {
 
 .store-hero__copy {
   color: var(--store-muted);
+}
+
+@media (max-width: 640px) {
+  .store-hero {
+    background-position: center, 68% center;
+    background-image:
+      linear-gradient(180deg, rgba(245, 245, 247, 0.98) 0%, rgba(245, 245, 247, 0.94) 48%, rgba(245, 245, 247, 0.68) 100%),
+      url('/images/wen-appliances-home-background.webp');
+  }
+
+  html[data-theme='dark'] .store-hero {
+    background-image:
+      linear-gradient(180deg, rgba(15, 16, 17, 0.97) 0%, rgba(15, 16, 17, 0.9) 48%, rgba(15, 16, 17, 0.58) 100%),
+      url('/images/wen-appliances-home-background.webp');
+  }
+
 }
 
 .store-category-section {
