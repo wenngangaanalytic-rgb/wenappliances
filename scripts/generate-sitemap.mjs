@@ -16,7 +16,8 @@ const escapeXml = (value) => String(value)
 
 const urls = [
   { path: '/', changefreq: 'daily', priority: '1.0' },
-  { path: '/products', changefreq: 'daily', priority: '0.9' }
+  { path: '/products', changefreq: 'daily', priority: '0.9' },
+  { path: '/terms', changefreq: 'yearly', priority: '0.2' }
 ];
 
 if (supabaseUrl && supabaseKey) {

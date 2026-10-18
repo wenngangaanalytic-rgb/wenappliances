@@ -10,6 +10,7 @@
     "build": "node scripts/build-for-vercel.mjs",
     "prebuild:storefront": "node scripts/generate-sitemap.mjs",
     "build:storefront": "vite build --mode storefront",
+    "postbuild:storefront": "node scripts/generate-seo-pages.mjs",
     "build:admin": "vite build --mode admin",
     "android:admin:sync": "npm run build:admin && npx cap sync android",
     "android:admin:apk": "npm run android:admin:sync && cd android && gradlew.bat assembleDebug",

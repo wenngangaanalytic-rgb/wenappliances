@@ -15,6 +15,14 @@
   ],
   "rewrites": [
     {
+      "source": "/terms",
+      "destination": "/terms/index.html"
+    },
+    {
+      "source": "/products",
+      "destination": "/products/index.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

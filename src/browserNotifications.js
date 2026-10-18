@@ -1,5 +1,4 @@
 import { Capacitor } from '@capacitor/core';
-import { LocalNotifications } from '@capacitor/local-notifications';
 
 const TRACKED_ORDERS_KEY = 'wenappliances:notification-orders';
 const NATIVE_PERMISSION_KEY = 'wenappliances:native-notification-permission';
@@ -8,6 +7,7 @@ const NATIVE_PERMISSION_KEY = 'wenappliances:native-notification-permission';
 const NATIVE_CHANNEL_ID = 'chat_messages';
 
 const isNativeApp = () => Capacitor.isNativePlatform();
+const getLocalNotifications = async () => (await import('@capacitor/local-notifications')).LocalNotifications;
 
 const rememberNativePermission = (permission) => {
   if (!isNativeApp() || typeof window === 'undefined') return;
@@ -24,6 +24,7 @@ let nativeActionListenerPromise;
 const ensureNativeChannel = async () => {
   if (!isNativeApp() || Capacitor.getPlatform() !== 'android') return;
   if (!nativeChannelPromise) {
+    const LocalNotifications = await getLocalNotifications();
     nativeChannelPromise = LocalNotifications.createChannel({
       id: NATIVE_CHANNEL_ID,
       name: 'Wen Appliances alerts',
@@ -45,6 +46,7 @@ const ensureNativeChannel = async () => {
 const ensureNativeActionListener = async () => {
   if (!isNativeApp() || nativeActionListenerPromise) return;
 
+  const LocalNotifications = await getLocalNotifications();
   nativeActionListenerPromise = LocalNotifications.addListener(
     'localNotificationActionPerformed',
     ({ notification }) => {
@@ -66,6 +68,7 @@ export const initializeNativeNotifications = async () => {
   try {
     await ensureNativeChannel();
     await ensureNativeActionListener();
+    const LocalNotifications = await getLocalNotifications();
     const permission = await LocalNotifications.checkPermissions();
     rememberNativePermission(permission.display);
     return permission.display;
@@ -101,6 +104,7 @@ export const getNotificationPermission = () => {
 export const requestBrowserNotificationPermission = async () => {
   if (isNativeApp()) {
     try {
+      const LocalNotifications = await getLocalNotifications();
       const current = await LocalNotifications.checkPermissions();
       if (current.display === 'granted') {
         rememberNativePermission('granted');
@@ -150,6 +154,7 @@ export const showOrderNotification = async ({
 }) => {
   if (isNativeApp()) {
     try {
+      const LocalNotifications = await getLocalNotifications();
       const permission = await LocalNotifications.checkPermissions();
       rememberNativePermission(permission.display);
       if (permission.display !== 'granted') return false;
@@ -255,6 +260,7 @@ export const clearNativeChatNotifications = async ({ threadKey } = {}) => {
   if (!isNativeApp()) return;
 
   try {
+    const LocalNotifications = await getLocalNotifications();
     const { notifications = [] } = await LocalNotifications.getDeliveredNotifications();
     const ids = notifications
       .filter((notification) => !threadKey || notification?.extra?.threadKey === threadKey)

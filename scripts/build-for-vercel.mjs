@@ -9,6 +9,7 @@ const isAdminProject = process.env.VERCEL_PROJECT_ID === adminProjectId;
 const buildMode = isAdminProject ? 'admin' : 'storefront';
 const viteBin = resolve(projectRoot, 'node_modules', 'vite', 'bin', 'vite.js');
 const sitemapScript = resolve(projectRoot, 'scripts', 'generate-sitemap.mjs');
+const seoPagesScript = resolve(projectRoot, 'scripts', 'generate-seo-pages.mjs');
 
 // Always build from a clean generated directory so a previous storefront
 // build cannot leave stale assets in an admin deployment (or vice versa).
@@ -25,6 +26,13 @@ execFileSync(process.execPath, [viteBin, 'build', '--mode', buildMode], {
   cwd: projectRoot,
   stdio: 'inherit'
 });
+
+if (!isAdminProject) {
+  execFileSync(process.execPath, [seoPagesScript], {
+    cwd: projectRoot,
+    stdio: 'inherit'
+  });
+}
 
 // The admin project previously used both dist and dist/admin settings. Keep
 // both locations populated so either existing Vercel setting serves the right
