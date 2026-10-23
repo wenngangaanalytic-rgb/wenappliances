@@ -374,8 +374,18 @@ export default async function handler(req, res) {
     return json(res, 405, { error: 'Method not allowed.' });
   }
 
-  const webhookSecret = process.env.NOTIFICATION_WEBHOOK_SECRET || process.env.MESSAGE_WEBHOOK_SECRET;
-  if (!secretsMatch(getHeader(req, 'x-webhook-secret'), webhookSecret)) {
+  const receivedSecret = getHeader(req, 'x-webhook-secret');
+  const webhookSecrets = [
+    process.env.NOTIFICATION_WEBHOOK_SECRET,
+    process.env.NOTIFICATION_WEBHOOK_SECRET_NEXT,
+    process.env.MESSAGE_WEBHOOK_SECRET
+  ].filter((secret) => typeof secret === 'string' && secret.length > 0);
+  const isAuthorized = webhookSecrets.reduce(
+    (matched, expectedSecret) => secretsMatch(receivedSecret, expectedSecret) || matched,
+    false
+  );
+
+  if (!isAuthorized) {
     return json(res, 401, { error: 'Unauthorized.' });
   }
 

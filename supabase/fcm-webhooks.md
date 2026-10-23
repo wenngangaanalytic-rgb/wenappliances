@@ -16,6 +16,7 @@ The Vercel project serving `wenappliances.vercel.app` needs these Production env
 - `SUPABASE_URL` — the project URL.
 - `SUPABASE_SERVICE_ROLE_KEY` — the server-only Supabase service-role key. `SUPABASE_SECRET_KEY` is accepted as a legacy fallback.
 - `NOTIFICATION_WEBHOOK_SECRET` — recommended shared webhook secret. `MESSAGE_WEBHOOK_SECRET` is accepted as a legacy fallback.
+- `NOTIFICATION_WEBHOOK_SECRET_NEXT` — temporary overlap key used only during a controlled secret rotation; remove it after the database triggers and primary secret are switched.
 
 After changing Vercel environment variables, redeploy the production project so the function receives the new values.
 
@@ -25,10 +26,10 @@ In the production Supabase Dashboard, create three Database Webhooks with this U
 
 `https://wenappliances.vercel.app/api/send-notification`
 
-For each webhook, add the custom request header:
+For each webhook, add the custom request header (the database triggers read the secret from Supabase Vault):
 
 ```text
-x-webhook-secret: <the exact value stored in NOTIFICATION_WEBHOOK_SECRET>
+x-webhook-secret: <the value stored in Supabase Vault as notification_webhook_secret>
 ```
 
 Create these event subscriptions:
