@@ -5,7 +5,7 @@ import {
   Package, LayoutDashboard, Settings, LogOut, 
   TrendingUp, Users, DollarSign, Edit, Trash2, Plus,
   ShieldCheck, AlertTriangle, CheckCircle2, Lock, Eye, EyeOff,
-  Printer, Download, ImagePlus, Moon, Sun, GripVertical, Star, MessagesSquare
+  Printer, Download, ImagePlus, Moon, Sun, GripVertical, Star, MessagesSquare, ExternalLink
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 const SecureAdminLogin = lazy(() => import('./AdminLogin'));
@@ -1926,6 +1926,15 @@ const AdminLayout = ({ children }) => {
   }, [currentRoute]);
 
   useEffect(() => {
+    if (!isMobileNavOpen) return undefined;
+    const closeMenuOnEscape = (event) => {
+      if (event.key === 'Escape') setIsMobileNavOpen(false);
+    };
+    window.addEventListener('keydown', closeMenuOnEscape);
+    return () => window.removeEventListener('keydown', closeMenuOnEscape);
+  }, [isMobileNavOpen]);
+
+  useEffect(() => {
     const groupId = currentRoute.includes('chats') || currentRoute.includes('members')
       ? 'support'
       : currentRoute.includes('tools') ? 'system' : 'operations';
@@ -1954,15 +1963,15 @@ const AdminLayout = ({ children }) => {
 
   const renderNavigation = () => navGroups.map((group) => {
     const isCollapsed = Boolean(collapsedGroups[group.id]);
-    return <section key={group.id} className="space-y-1">
-      <button type="button" onClick={() => setCollapsedGroups((current) => ({ ...current, [group.id]: !current[group.id] }))} className="flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-[10px] font-bold uppercase tracking-[0.15em] text-[#858884] transition hover:bg-[#1D2023] hover:text-[#B8BAB7]" aria-expanded={!isCollapsed}>
+    return <section key={group.id} className="admin-nav-group space-y-1">
+      <button type="button" onClick={() => setCollapsedGroups((current) => ({ ...current, [group.id]: !current[group.id] }))} className="admin-nav-group-toggle flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-[10px] font-bold uppercase tracking-[0.15em] text-[#858884] transition hover:bg-[#1D2023] hover:text-[#B8BAB7]" aria-expanded={!isCollapsed}>
         <span>{group.label}</span><ChevronRight className={`h-3.5 w-3.5 transition-transform ${isCollapsed ? '' : 'rotate-90'}`} aria-hidden="true" />
       </button>
       {!isCollapsed && group.items.map((item) => {
         const path = `${adminBasePath}/${item.id}` || `/${item.id}`;
         const adminRoot = adminBasePath ? currentRoute === adminBasePath : currentRoute === '/';
         const active = currentRoute.includes(item.id) || (adminRoot && item.id === 'dashboard');
-        return <button key={item.id} type="button" onClick={() => navigate(path)} className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors ${active ? 'bg-[#9C6644] text-white' : 'text-[#B8BAB7] hover:bg-[#24272A] hover:text-[#F1F1EF]'}`}>
+        return <button key={item.id} type="button" onClick={() => navigate(path)} aria-current={active ? 'page' : undefined} className={`admin-nav-item flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors ${active ? 'is-active bg-[#9C6644] text-white' : 'text-[#B8BAB7] hover:bg-[#24272A] hover:text-[#F1F1EF]'}`}>
           <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left"><span className="truncate">{item.label}</span>{item.id === 'orders' && activeOrderCount > 0 && <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-[#9C6644] px-1.5 py-0.5 text-[10px] font-bold text-white">{activeOrderCount}</span>}</span>
         </button>;
@@ -1970,17 +1979,33 @@ const AdminLayout = ({ children }) => {
     </section>;
   });
 
+  const mobileItems = [navGroups[0].items[0], navGroups[0].items[2], navGroups[0].items[1], navGroups[1].items[0]];
+  const renderMoreNavigation = () => navGroups.map((group) => {
+    const items = group.items.filter((item) => !['dashboard', 'orders', 'products', 'chats'].includes(item.id));
+    if (!items.length) return null;
+    return <section key={group.id} className="admin-mobile-menu__group">
+      <p className="admin-mobile-menu__label">{group.label}</p>
+      {items.map((item) => {
+        const path = `${adminBasePath}/${item.id}` || `/${item.id}`;
+        const active = currentRoute.includes(item.id);
+        return <button key={item.id} type="button" onClick={() => { setIsMobileNavOpen(false); navigate(path); }} aria-current={active ? 'page' : undefined} className={`admin-mobile-menu__link ${active ? 'is-active' : ''}`}>
+          <item.icon className="h-4 w-4" aria-hidden="true" />{item.label}<ChevronRight className="ml-auto h-4 w-4" aria-hidden="true" />
+        </button>;
+      })}
+    </section>;
+  });
+
   return (
-    <div className="motion-fade-in min-h-screen bg-[#0B0B0C] text-[#F1F1EF] flex font-sans selection:bg-[#9C6644]/30">
+    <div className="admin-app motion-fade-in min-h-screen bg-[#0B0B0C] text-[#F1F1EF] flex font-sans selection:bg-[#9C6644]/30">
       {/* Sidebar */}
-      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-[#24272A] bg-[#17191C] lg:flex">
-        <div className="p-6 border-b border-[#24272A]">
+      <aside className="admin-sidebar sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-[#24272A] bg-[#17191C] lg:flex">
+        <div className="admin-sidebar__brand p-6 border-b border-[#24272A]">
           <Logo dark={theme === 'dark'} />
         </div>
-        <nav className="grow space-y-4 overflow-y-auto px-3 py-5" aria-label="Administrator navigation">
+        <nav className="admin-sidebar__nav grow space-y-4 overflow-y-auto px-3 py-5" aria-label="Administrator navigation">
           {renderNavigation()}
         </nav>
-        <div className="p-4 border-t border-[#24272A] flex flex-col gap-4">
+        <div className="admin-sidebar__footer p-4 border-t border-[#24272A] flex flex-col gap-4">
            <div className="flex items-center gap-3 px-2">
              <div className="h-8 w-8 rounded-full bg-[#24272A] flex items-center justify-center text-[#9C6644] font-bold text-xs">{user.name.charAt(0)}</div>
              <div className="flex flex-col">
@@ -1988,48 +2013,35 @@ const AdminLayout = ({ children }) => {
                <span className="text-[10px] text-[#858884] uppercase tracking-wider">{user.role}</span>
              </div>
            </div>
-           <button onClick={logout} className="flex items-center gap-2 text-sm text-[#858884] hover:text-red-400 px-2 py-1 transition-colors">
+           <button type="button" onClick={logout} className="admin-signout flex min-h-10 items-center gap-2 text-sm text-[#858884] hover:text-red-400 px-2 py-1 transition-colors">
               <LogOut className="h-4 w-4" /> Terminate Session
            </button>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex min-h-screen min-w-0 grow flex-col overflow-hidden lg:h-screen">
-        <header className="sticky top-0 z-[110] flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-[#24272A] bg-[#17191C]/95 px-3 backdrop-blur-md sm:px-5 lg:px-8">
+      <main className="admin-main flex min-h-screen min-w-0 grow flex-col overflow-hidden lg:h-screen">
+        <header className="admin-topbar sticky top-0 z-[110] flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-[#24272A] bg-[#17191C]/95 px-3 backdrop-blur-md sm:px-5 lg:px-8">
            <div className="flex min-w-0 items-center gap-2 text-sm text-[#858884]">
-             <button type="button" onClick={() => setIsMobileNavOpen((open) => !open)} className="inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-lg border border-[#4A5568]/40 bg-[#24272A] text-[#F1F1EF] hover:bg-[#30343A] lg:hidden" aria-label={isMobileNavOpen ? 'Close administrator navigation' : 'Open administrator navigation'} aria-expanded={isMobileNavOpen}>
-               {isMobileNavOpen ? <X className="h-4 w-4" aria-hidden="true" /> : <Menu className="h-4 w-4" aria-hidden="true" />}
-             </button>
-             <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#9C6644]/30 bg-[#9C6644]/10 text-[#C08457]" aria-hidden="true"><Lock className="h-4 w-4" /></span>
-             <span className="min-w-0 max-w-[40vw] truncate text-xs font-semibold text-[#F1F3EF] sm:text-sm xl:hidden">{currentPageLabel}</span>
+             <span className="admin-topbar__lock inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#9C6644]/30 bg-[#9C6644]/10 text-[#C08457]" aria-hidden="true"><Lock className="h-4 w-4" /></span>
+             <span className="admin-topbar__mobile-title min-w-0 max-w-[40vw] truncate text-xs font-semibold text-[#F1F3EF] sm:text-sm xl:hidden">{currentPageLabel}</span>
              <span className="hidden min-w-0 xl:block"><span className="block truncate text-xs font-semibold text-[#F1F3EF]">Wen Appliances Admin</span><span className="mt-0.5 block truncate text-[10px] text-[#858884]">{currentPageLabel}</span></span>
            </div>
              <div className="flex min-w-0 items-center justify-end gap-2 sm:gap-3">
-             <span className="hidden items-center gap-2 rounded-full border border-[#3A3D40] px-2.5 py-2 text-[11px] text-[#B8BAB7] xl:inline-flex" title={connectionStatus === 'online' ? 'Supabase is reachable' : connectionStatus === 'checking' ? 'Checking Supabase connectivity' : 'Connection needs attention'}><span className={`h-2 w-2 rounded-full ${connectionStatus === 'online' ? 'bg-emerald-400' : connectionStatus === 'checking' ? 'bg-[#C08457]' : 'bg-red-400'}`} />{connectionStatus === 'online' ? 'Connected' : connectionStatus === 'checking' ? 'Checking' : 'Connection issue'}</span>
+             <span className="admin-connection-pill hidden items-center gap-2 rounded-full border border-[#3A3D40] px-2.5 py-2 text-[11px] text-[#B8BAB7] xl:inline-flex" title={connectionStatus === 'online' ? 'Supabase is reachable' : connectionStatus === 'checking' ? 'Checking Supabase connectivity' : 'Connection needs attention'}><span className={`h-2 w-2 rounded-full ${connectionStatus === 'online' ? 'bg-emerald-400' : connectionStatus === 'checking' ? 'bg-[#C08457]' : 'bg-red-400'}`} />{connectionStatus === 'online' ? 'Connected' : connectionStatus === 'checking' ? 'Checking' : 'Connection issue'}</span>
              <AdminGlobalSearch navigate={navigate} adminBasePath={adminBasePath} />
-             <button type="button" onClick={() => navigate(`${adminBasePath}/new-product` || '/new-product')} className="hidden min-h-10 items-center gap-2 rounded-lg bg-[#9C6644] px-3 text-sm font-semibold text-white transition hover:bg-[#8A5A3C] sm:inline-flex"><Plus className="h-4 w-4" aria-hidden="true" /><span className="hidden xl:inline">Add appliance</span><span className="xl:hidden">Add</span></button>
+             <button type="button" onClick={() => navigate(`${adminBasePath}/new-product` || '/new-product')} className="admin-add-button hidden min-h-10 items-center gap-2 rounded-lg bg-[#9C6644] px-3 text-sm font-semibold text-white transition hover:bg-[#8A5A3C] sm:inline-flex"><Plus className="h-4 w-4" aria-hidden="true" /><span className="hidden xl:inline">Add appliance</span><span className="xl:hidden">Add</span></button>
              <ChatNotificationBell />
              <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
-             <a href={storefrontUrl} className="inline-flex min-h-10 items-center rounded border border-[#4A5568]/30 bg-[#24272A] px-2.5 text-xs transition-colors hover:bg-[#1D2023] sm:px-3">
+             <a href={storefrontUrl} className="admin-store-link inline-flex min-h-10 items-center rounded border border-[#4A5568]/30 bg-[#24272A] px-2.5 text-xs transition-colors hover:bg-[#1D2023] sm:px-3">
                <span className="hidden sm:inline">View Public Storefront</span>
                <span className="sm:hidden">Store</span>
              </a>
              <button type="button" onClick={logout} className="hidden min-h-10 items-center gap-2 rounded-lg border border-[#3A3D40] px-2.5 text-xs text-[#B8BAB7] transition hover:border-red-500/40 hover:text-red-300 xl:inline-flex" title={`Signed in as ${user.name}; select to sign out`}><span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#24272A] font-bold text-[#C08457]">{user.name.charAt(0).toUpperCase()}</span><span className="max-w-24 truncate">{user.name}</span></button>
            </div>
-           {isMobileNavOpen && (
-             <>
-               <button type="button" onClick={() => setIsMobileNavOpen(false)} className="fixed inset-x-0 bottom-0 top-16 z-[90] bg-black/50 lg:hidden" aria-label="Close administrator navigation" />
-               <nav className="fixed inset-x-0 top-16 z-[100] max-h-[calc(100dvh-4rem)] space-y-4 overflow-y-auto border-b border-[#24272A] bg-[#17191C] p-3 shadow-2xl lg:hidden" aria-label="Administrator navigation">
-                 {renderNavigation()}
-                 <button type="button" onClick={() => { setIsMobileNavOpen(false); navigate(`${adminBasePath}/new-product` || '/new-product'); }} className="flex min-h-11 w-full items-center gap-3 rounded-lg bg-[#9C6644] px-3 text-sm font-semibold text-white"><Plus className="h-4 w-4" aria-hidden="true" />Add appliance</button>
-                 <button type="button" onClick={() => void logout()} className="flex min-h-11 w-full items-center gap-3 rounded-lg border border-[#3A3D40] px-3 text-sm text-[#B8BAB7]"><LogOut className="h-4 w-4" aria-hidden="true" />Sign out</button>
-               </nav>
-             </>
-           )}
         </header>
          <PullToRefresh
-           className="p-4 sm:p-8"
+           className="admin-content p-4 pb-24 sm:p-8 sm:pb-24 lg:pb-8"
            onRefresh={() => window.dispatchEvent(new CustomEvent('wen:admin-refresh'))}
          >
            <div className="mx-auto max-w-6xl">
@@ -2037,6 +2049,30 @@ const AdminLayout = ({ children }) => {
            </div>
          </PullToRefresh>
       </main>
+      <nav className="admin-mobile-nav lg:hidden" aria-label="Primary administrator navigation">
+        {mobileItems.map((item) => {
+          const path = `${adminBasePath}/${item.id}` || `/${item.id}`;
+          const adminRoot = adminBasePath ? currentRoute === adminBasePath : currentRoute === '/';
+          const active = currentRoute.includes(item.id) || (adminRoot && item.id === 'dashboard');
+          return <button key={item.id} type="button" onClick={() => navigate(path)} aria-current={active ? 'page' : undefined} className={`admin-mobile-nav__item ${active ? 'is-active' : ''}`}>
+            <span className="admin-mobile-nav__icon-wrap"><item.icon className="h-5 w-5" aria-hidden="true" />{item.id === 'orders' && activeOrderCount > 0 && <span className="admin-mobile-nav__badge">{activeOrderCount > 99 ? '99+' : activeOrderCount}</span>}</span>
+            <span>{item.id === 'dashboard' ? 'Home' : item.id === 'products' ? 'Stock' : item.id === 'chats' ? 'Chats' : item.label}</span>
+          </button>;
+        })}
+        <button type="button" onClick={() => setIsMobileNavOpen((open) => !open)} aria-expanded={isMobileNavOpen} aria-label={isMobileNavOpen ? 'Close more administrator options' : 'Open more administrator options'} className={`admin-mobile-nav__item ${isMobileNavOpen || currentRoute.includes('members') || currentRoute.includes('tools') ? 'is-active' : ''}`}>
+          {isMobileNavOpen ? <X className="h-5 w-5" aria-hidden="true" /> : <Menu className="h-5 w-5" aria-hidden="true" />}<span>More</span>
+        </button>
+      </nav>
+      {isMobileNavOpen && <>
+        <button type="button" onClick={() => setIsMobileNavOpen(false)} className="admin-mobile-menu__backdrop" aria-label="Close more administrator options" />
+        <nav className="admin-mobile-menu" aria-label="More administrator options">
+          <div className="admin-mobile-menu__header"><span>More options</span><button type="button" onClick={() => setIsMobileNavOpen(false)} aria-label="Close menu"><X className="h-4 w-4" aria-hidden="true" /></button></div>
+          {renderMoreNavigation()}
+          <a href={storefrontUrl} className="admin-mobile-menu__link"><span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-[#24272A] text-[#C08457]"><ExternalLink className="h-4 w-4" aria-hidden="true" /></span>View public storefront<ChevronRight className="ml-auto h-4 w-4" aria-hidden="true" /></a>
+          <button type="button" onClick={() => { setIsMobileNavOpen(false); navigate(`${adminBasePath}/new-product` || '/new-product'); }} className="admin-mobile-menu__primary"><Plus className="h-4 w-4" aria-hidden="true" />Add appliance</button>
+          <div className="admin-mobile-menu__account"><span className="admin-mobile-menu__avatar">{user.name.charAt(0).toUpperCase()}</span><span className="min-w-0 flex-1"><strong>{user.name}</strong><small>{user.role}</small></span><button type="button" onClick={() => void logout()} aria-label="Sign out" title="Sign out"><LogOut className="h-4 w-4" aria-hidden="true" /></button></div>
+        </nav>
+      </>}
       {showIdleWarning && <div className="fixed inset-0 z-[260] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="idle-warning-title"><section className="w-full max-w-sm rounded-2xl border border-[#3A3D40] bg-[#17191C] p-5 shadow-2xl"><p className="text-xs font-semibold uppercase tracking-wider text-[#C08457]">Session security</p><h2 id="idle-warning-title" className="mt-2 text-lg font-semibold text-[#F1F3EF]">Still working?</h2><p className="mt-2 text-sm leading-6 text-[#B8BAB7]">For your security, you’ll be signed out after 30 minutes of inactivity. Continue the session to stay signed in.</p><div className="mt-5 flex gap-3"><button type="button" onClick={() => window.dispatchEvent(new Event('wen:admin-activity'))} className="min-h-11 flex-1 rounded-lg bg-[#9C6644] px-4 text-sm font-semibold text-white hover:bg-[#8A5A3C]">Continue session</button><button type="button" onClick={() => void logout()} className="min-h-11 rounded-lg border border-[#3A3D40] px-4 text-sm text-[#B8BAB7] hover:text-white">Sign out</button></div></section></div>}
     </div>
   );
@@ -2137,8 +2173,8 @@ const AdminDashboard = () => {
   }, []);
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="admin-dashboard space-y-8 animate-in fade-in duration-500">
+      <div className="admin-page-heading flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#C08457]">Wen Appliances · Operations</p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight">Dashboard</h1>
@@ -2152,7 +2188,7 @@ const AdminDashboard = () => {
 
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300" role="alert">{error}</div>}
 
-      <div className="motion-stagger grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+      <div className="admin-stat-grid motion-stagger grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
         <StatCard title="Collected · last 30 days" value={summary ? formatMoney(summary.revenue_30d) : '—'} icon={DollarSign} />
         <StatCard title="Awaiting confirmation" value={summary?.pending_orders_30d ?? '—'} icon={ShoppingCart} color="wen-warning-foreground" />
         <StatCard title="Confirmed · in progress" value={summary?.confirmed_orders_30d ?? '—'} icon={TrendingUp} color="text-emerald-400" />
@@ -2160,7 +2196,7 @@ const AdminDashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="col-span-2 overflow-hidden rounded-xl border border-[#24272A] bg-[#17191C] shadow-sm">
+        <div className="admin-dashboard-panel col-span-2 overflow-hidden rounded-xl border border-[#24272A] bg-[#17191C] shadow-sm">
           <div className="flex items-center justify-between border-b border-[#24272A] p-5"><div><h3 className="font-semibold text-[#F1F3EF]">Recent orders</h3><p className="mt-1 text-xs text-[#858884]">Latest order activity from Supabase.</p></div><button type="button" onClick={() => navigate(`${adminBasePath}/orders` || '/orders')} className="inline-flex min-h-10 items-center gap-1 text-xs font-semibold text-[#C08457] hover:underline">Open orders <ChevronRight className="h-4 w-4" aria-hidden="true" /></button></div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-left text-sm">
@@ -2174,8 +2210,8 @@ const AdminDashboard = () => {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-[#24272A] bg-[#17191C] shadow-sm">
-          <div className="flex items-center justify-between border-b border-[#24272A] p-5"><h3 className="flex items-center gap-2 font-semibold text-[#F1F3EF]"><AlertTriangle className="wen-warning-foreground h-4 w-4" /> Stock alerts</h3><button type="button" onClick={() => navigate(`${adminBasePath}/products` || '/products')} className="text-xs font-semibold text-[#C08457] hover:underline">Manage inventory</button></div>
+        <div className="admin-dashboard-panel overflow-hidden rounded-xl border border-[#24272A] bg-[#17191C] shadow-sm">
+          <div className="flex items-center justify-between border-b border-[#24272A] p-5"><h3 className="flex items-center gap-2 font-semibold text-[#F1F3EF]"><AlertTriangle className="admin-stock-icon h-4 w-4" /> Stock alerts</h3><button type="button" onClick={() => navigate(`${adminBasePath}/products` || '/products')} className="text-xs font-semibold text-[#C08457] hover:underline">Manage inventory</button></div>
           <div className="space-y-4 p-5">
             {lowStockProducts.slice(0, 8).map((product) => <div key={product.id} className="flex items-start justify-between gap-3 border-b border-[#24272A] pb-4 last:border-0 last:pb-0"><div className="min-w-0"><p className="line-clamp-1 text-sm font-medium text-[#F1F3EF]">{product.name || 'Unnamed appliance'}</p><p className="mt-1 text-xs text-[#858884]">{Number(product.stock || 0) <= 0 ? 'Out of stock' : 'Low stock'}</p></div><div className={`shrink-0 rounded px-2 py-1 text-xs font-bold ${Number(product.stock || 0) <= 0 ? 'bg-red-500/20 text-red-300' : 'wen-warning-badge'}`}>{Number(product.stock || 0)} left</div></div>)}
             {!loading && !lowStockProducts.length && <p className="py-4 text-center text-sm text-[#858884]">Inventory levels are healthy.</p>}
@@ -2194,7 +2230,7 @@ const AdminDashboard = () => {
 };
 
 const StatCard = ({ title, value, icon: Icon, trend, color = "text-[#F1F1EF]" }) => (
-  <div className="bg-[#17191C] p-6 rounded-xl border border-[#24272A] shadow-sm flex min-h-32 flex-col justify-between">
+  <div className="admin-stat-card bg-[#17191C] p-6 rounded-xl border border-[#24272A] shadow-sm flex min-h-32 flex-col justify-between">
     <div className="flex justify-between items-start">
       <p className="text-[#858884] text-sm font-medium">{title}</p>
       <div className="p-2 bg-[#24272A] rounded-lg"><Icon className={`h-4 w-4 ${color === 'text-[#F1F1EF]' ? 'text-[#9C6644]' : color}`} /></div>
