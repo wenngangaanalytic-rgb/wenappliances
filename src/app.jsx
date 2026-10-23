@@ -64,7 +64,7 @@ const Logo = ({ className = "", dark = false }) => (
       className="h-9 w-9 shrink-0 object-contain"
     />
     <span className={`font-extrabold tracking-tight text-xl ${dark ? 'text-white' : 'text-[#111214]'}`}>
-      {isAdminApp ? <>Admin<span className="text-[#2563EB] font-normal"> Wen</span></> : <>Wen<span className="text-[#9C6644] font-normal">Appliances</span></>}
+      {isAdminApp ? <>Admin<span className="text-[#BD8966] font-normal"> Wen</span></> : <>Wen<span className="text-[#9C6644] font-normal">Appliances</span></>}
     </span>
   </div>
 );
@@ -1835,7 +1835,7 @@ const AdminGlobalSearch = ({ navigate, adminBasePath }) => {
 
   return (
     <>
-      <button type="button" onClick={() => { setIsOpen(true); window.setTimeout(() => inputRef.current?.focus(), 0); }} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#3A3D40] bg-[#0B0B0C] px-3 text-sm text-[#B8BAB7] transition hover:border-[#9C6644] hover:text-[#F1F3EF]" aria-label="Search products, orders, and support messages">
+      <button type="button" onClick={() => { setIsOpen(true); window.setTimeout(() => inputRef.current?.focus(), 0); }} className="admin-search-trigger inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#3A3D40] bg-[#0B0B0C] px-3 text-sm text-[#B8BAB7] transition hover:border-[#9C6644] hover:text-[#F1F3EF]" aria-label="Search products, orders, and support messages">
         <Search className="h-4 w-4" aria-hidden="true" /><span className="hidden xl:inline">Search</span><kbd className="hidden rounded border border-[#3A3D40] px-1.5 py-0.5 text-[10px] text-[#858884] sm:inline">Ctrl K</kbd>
       </button>
       {isOpen && <div className="fixed inset-0 z-[300] flex items-start justify-center bg-black/60 px-3 pt-[max(4.5rem,env(safe-area-inset-top))] backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsOpen(false); }}>
@@ -1858,7 +1858,7 @@ const AdminLayout = ({ children }) => {
   const { user, logout, navigate, currentRoute, theme, toggleTheme, adminBasePath } = useContext(AppContext);
   const [activeOrderCount, setActiveOrderCount] = useState(0);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
-  const [collapsedGroups, setCollapsedGroups] = useState({ support: true, system: true });
+  const [collapsedGroups, setCollapsedGroups] = useState({ support: false, system: false });
   const [connectionStatus, setConnectionStatus] = useState('checking');
   const [showIdleWarning, setShowIdleWarning] = useState(false);
   const logoutRef = useRef(logout);
@@ -1997,54 +1997,48 @@ const AdminLayout = ({ children }) => {
 
   return (
     <div className="admin-app motion-fade-in min-h-screen bg-[#0B0B0C] text-[#F1F1EF] flex font-sans selection:bg-[#9C6644]/30">
-      {/* Sidebar */}
       <aside className="admin-sidebar sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-[#24272A] bg-[#17191C] lg:flex">
-        <div className="admin-sidebar__brand p-6 border-b border-[#24272A]">
-          <Logo dark={theme === 'dark'} />
+        <div className="admin-sidebar__brand p-5">
+          <Logo dark />
+          <div className="admin-sidebar__workspace"><span className="admin-sidebar__workspace-mark"><ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" /></span><span><strong>Operations</strong><small>Wen Appliances</small></span></div>
         </div>
+        <p className="admin-sidebar__section-label">Workspace</p>
         <nav className="admin-sidebar__nav grow space-y-4 overflow-y-auto px-3 py-5" aria-label="Administrator navigation">
           {renderNavigation()}
         </nav>
-        <div className="admin-sidebar__footer p-4 border-t border-[#24272A] flex flex-col gap-4">
-           <div className="flex items-center gap-3 px-2">
-             <div className="h-8 w-8 rounded-full bg-[#24272A] flex items-center justify-center text-[#9C6644] font-bold text-xs">{user.name.charAt(0)}</div>
-             <div className="flex flex-col">
-               <span className="text-sm font-medium text-[#F1F3EF]">{user.name}</span>
-               <span className="text-[10px] text-[#858884] uppercase tracking-wider">{user.role}</span>
-             </div>
-           </div>
-           <button type="button" onClick={logout} className="admin-signout flex min-h-10 items-center gap-2 text-sm text-[#858884] hover:text-red-400 px-2 py-1 transition-colors">
-              <LogOut className="h-4 w-4" /> Terminate Session
-           </button>
+        <div className="admin-sidebar__footer p-4 border-t border-[#24272A] flex flex-col gap-3">
+          <div className="admin-sidebar__user">
+            <div className="admin-sidebar__avatar">{user.name.charAt(0).toUpperCase()}</div>
+            <div className="min-w-0 flex-1"><span className="admin-sidebar__user-name">{user.name}</span><span className="admin-sidebar__user-role">{user.role}</span></div>
+            <span className="admin-sidebar__secure" title="Administrator account"><Lock className="h-3.5 w-3.5" aria-hidden="true" /></span>
+          </div>
+          <button type="button" onClick={logout} className="admin-signout flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm text-[#858884] transition-colors hover:text-red-400">
+            <LogOut className="h-4 w-4" aria-hidden="true" /> Sign out
+          </button>
         </div>
       </aside>
 
-      {/* Main Content Area */}
       <main className="admin-main flex min-h-screen min-w-0 grow flex-col overflow-hidden lg:h-screen">
-        <header className="admin-topbar sticky top-0 z-[110] flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-[#24272A] bg-[#17191C]/95 px-3 backdrop-blur-md sm:px-5 lg:px-8">
-           <div className="flex min-w-0 items-center gap-2 text-sm text-[#858884]">
-             <span className="admin-topbar__lock inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#9C6644]/30 bg-[#9C6644]/10 text-[#C08457]" aria-hidden="true"><Lock className="h-4 w-4" /></span>
-             <span className="admin-topbar__mobile-title min-w-0 max-w-[40vw] truncate text-xs font-semibold text-[#F1F3EF] sm:text-sm xl:hidden">{currentPageLabel}</span>
-             <span className="hidden min-w-0 xl:block"><span className="block truncate text-xs font-semibold text-[#F1F3EF]">Wen Appliances Admin</span><span className="mt-0.5 block truncate text-[10px] text-[#858884]">{currentPageLabel}</span></span>
-           </div>
-             <div className="flex min-w-0 items-center justify-end gap-2 sm:gap-3">
-             <span className="admin-connection-pill hidden items-center gap-2 rounded-full border border-[#3A3D40] px-2.5 py-2 text-[11px] text-[#B8BAB7] xl:inline-flex" title={connectionStatus === 'online' ? 'Supabase is reachable' : connectionStatus === 'checking' ? 'Checking Supabase connectivity' : 'Connection needs attention'}><span className={`h-2 w-2 rounded-full ${connectionStatus === 'online' ? 'bg-emerald-400' : connectionStatus === 'checking' ? 'bg-[#C08457]' : 'bg-red-400'}`} />{connectionStatus === 'online' ? 'Connected' : connectionStatus === 'checking' ? 'Checking' : 'Connection issue'}</span>
-             <AdminGlobalSearch navigate={navigate} adminBasePath={adminBasePath} />
-             <button type="button" onClick={() => navigate(`${adminBasePath}/new-product` || '/new-product')} className="admin-add-button hidden min-h-10 items-center gap-2 rounded-lg bg-[#9C6644] px-3 text-sm font-semibold text-white transition hover:bg-[#8A5A3C] sm:inline-flex"><Plus className="h-4 w-4" aria-hidden="true" /><span className="hidden xl:inline">Add appliance</span><span className="xl:hidden">Add</span></button>
-             <ChatNotificationBell />
-             <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
-             <a href={storefrontUrl} className="admin-store-link inline-flex min-h-10 items-center rounded border border-[#4A5568]/30 bg-[#24272A] px-2.5 text-xs transition-colors hover:bg-[#1D2023] sm:px-3">
-               <span className="hidden sm:inline">View Public Storefront</span>
-               <span className="sm:hidden">Store</span>
-             </a>
-             <button type="button" onClick={logout} className="hidden min-h-10 items-center gap-2 rounded-lg border border-[#3A3D40] px-2.5 text-xs text-[#B8BAB7] transition hover:border-red-500/40 hover:text-red-300 xl:inline-flex" title={`Signed in as ${user.name}; select to sign out`}><span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#24272A] font-bold text-[#C08457]">{user.name.charAt(0).toUpperCase()}</span><span className="max-w-24 truncate">{user.name}</span></button>
-           </div>
+        <header className="admin-topbar sticky top-0 z-[110] flex min-h-[4.5rem] shrink-0 items-center justify-between gap-3 border-b border-[#24272A] bg-[#17191C]/95 px-3 backdrop-blur-md sm:px-5 lg:px-8">
+          <div className="admin-topbar__crumbs min-w-0">
+            <span className="admin-topbar__eyebrow">WEN <span>OPERATIONS</span></span>
+            <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span className="admin-topbar__mobile-title min-w-0 truncate">{currentPageLabel}</span>
+          </div>
+          <div className="flex min-w-0 items-center justify-end gap-2 sm:gap-3">
+            <span className="admin-connection-pill hidden items-center gap-2 rounded-full border border-[#3A3D40] px-3 py-2 text-[11px] text-[#B8BAB7] xl:inline-flex" title={connectionStatus === 'online' ? 'Supabase is reachable' : connectionStatus === 'checking' ? 'Checking Supabase connectivity' : 'Connection needs attention'}><span className={`h-2 w-2 rounded-full ${connectionStatus === 'online' ? 'bg-emerald-400' : connectionStatus === 'checking' ? 'bg-[#C08457]' : 'bg-red-400'}`} />{connectionStatus === 'online' ? 'Live data' : connectionStatus === 'checking' ? 'Connecting' : 'Connection issue'}</span>
+            <AdminGlobalSearch navigate={navigate} adminBasePath={adminBasePath} />
+            <button type="button" onClick={() => navigate(`${adminBasePath}/new-product` || '/new-product')} className="admin-add-button hidden min-h-10 items-center gap-2 rounded-lg bg-[#9C6644] px-3 text-sm font-semibold text-white transition hover:bg-[#8A5A3C] sm:inline-flex"><Plus className="h-4 w-4" aria-hidden="true" /><span className="hidden xl:inline">New appliance</span><span className="xl:hidden">Add</span></button>
+            <ChatNotificationBell />
+            <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
+            <a href={storefrontUrl} className="admin-store-link inline-flex min-h-10 items-center rounded-lg border border-[#4A5568]/30 bg-[#24272A] px-2.5 text-xs transition-colors hover:bg-[#1D2023] sm:px-3"><span className="hidden sm:inline">Open storefront</span><span className="sm:hidden">Store</span></a>
+          </div>
         </header>
          <PullToRefresh
            className="admin-content p-4 pb-24 sm:p-8 sm:pb-24 lg:pb-8"
            onRefresh={() => window.dispatchEvent(new CustomEvent('wen:admin-refresh'))}
          >
-           <div className="mx-auto max-w-6xl">
+           <div className="admin-workspace mx-auto max-w-6xl">
              {children}
            </div>
          </PullToRefresh>
@@ -2172,78 +2166,81 @@ const AdminDashboard = () => {
     };
   }, []);
 
+  const formattedLastUpdated = lastUpdated
+    ? lastUpdated.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : '';
+
   return (
-    <div className="admin-dashboard space-y-8 animate-in fade-in duration-500">
-      <div className="admin-page-heading flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#C08457]">Wen Appliances · Operations</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="mt-1 text-sm text-[#858884]">A live view of orders, inventory, and customer support.</p>
+    <div className="admin-dashboard space-y-6 animate-in fade-in duration-500">
+      <section className="admin-dashboard__welcome">
+        <div className="admin-dashboard__welcome-copy">
+          <div className="admin-dashboard__eyebrow"><span>Operations overview</span><span className="admin-live-tag">Wen Appliances</span></div>
+          <h1>Everything in view.</h1>
+          <p>Keep orders moving, inventory accurate, and customer conversations close at hand.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {lastUpdated && <span className="text-xs text-[#858884]">Updated {lastUpdated.toLocaleTimeString()}</span>}
-          <button type="button" onClick={() => navigate(`${adminBasePath}/new-product` || '/new-product')} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#9C6644] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#8A5A3C]"><Plus className="h-4 w-4" aria-hidden="true" /> Add appliance</button>
+        <div className="admin-dashboard__welcome-actions">
+          {lastUpdated && <span className="admin-dashboard__updated"><span className="admin-dashboard__live-dot" /> Updated {formattedLastUpdated}</span>}
+          <button type="button" onClick={() => navigate(`${adminBasePath}/new-product` || '/new-product')} className="admin-primary-action"><Plus className="h-4 w-4" aria-hidden="true" /> Add appliance</button>
         </div>
+        <div className="admin-dashboard__welcome-mark" aria-hidden="true"><img src="/wen-icon.png" alt="" /></div>
+      </section>
+
+      {error && <div className="admin-alert" role="alert"><AlertTriangle className="h-5 w-5 shrink-0" aria-hidden="true" /><span>{error}</span></div>}
+
+      <div className="admin-stat-grid grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+        <StatCard title="Collected · last 30 days" value={summary ? formatMoney(summary.revenue_30d) : '—'} icon={DollarSign} loading={loading} caption="Revenue recorded" />
+        <StatCard title="Awaiting confirmation" value={summary?.pending_orders_30d ?? '—'} icon={ShoppingCart} loading={loading} color="wen-warning-foreground" caption="Orders to review" />
+        <StatCard title="Confirmed · in progress" value={summary?.confirmed_orders_30d ?? '—'} icon={TrendingUp} loading={loading} color="text-emerald-400" caption="Active fulfillment" />
+        <StatCard title="Unread support messages" value={summary?.unread_customer_messages ?? '—'} icon={MessagesSquare} loading={loading} color="text-[#C08457]" caption="Customer conversations" />
       </div>
 
-      {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300" role="alert">{error}</div>}
-
-      <div className="admin-stat-grid motion-stagger grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
-        <StatCard title="Collected · last 30 days" value={summary ? formatMoney(summary.revenue_30d) : '—'} icon={DollarSign} />
-        <StatCard title="Awaiting confirmation" value={summary?.pending_orders_30d ?? '—'} icon={ShoppingCart} color="wen-warning-foreground" />
-        <StatCard title="Confirmed · in progress" value={summary?.confirmed_orders_30d ?? '—'} icon={TrendingUp} color="text-emerald-400" />
-        <StatCard title="Unread support messages" value={summary?.unread_customer_messages ?? '—'} icon={MessagesSquare} color="text-[#C08457]" />
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="admin-dashboard-panel col-span-2 overflow-hidden rounded-xl border border-[#24272A] bg-[#17191C] shadow-sm">
-          <div className="flex items-center justify-between border-b border-[#24272A] p-5"><div><h3 className="font-semibold text-[#F1F3EF]">Recent orders</h3><p className="mt-1 text-xs text-[#858884]">Latest order activity from Supabase.</p></div><button type="button" onClick={() => navigate(`${adminBasePath}/orders` || '/orders')} className="inline-flex min-h-10 items-center gap-1 text-xs font-semibold text-[#C08457] hover:underline">Open orders <ChevronRight className="h-4 w-4" aria-hidden="true" /></button></div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-left text-sm">
-              <thead className="bg-[#0B0B0C] text-xs uppercase tracking-wider text-[#858884]"><tr><th className="px-5 py-3 font-medium">Order ID</th><th className="px-5 py-3 font-medium">Customer</th><th className="px-5 py-3 font-medium">Amount</th><th className="px-5 py-3 font-medium">Status</th></tr></thead>
-              <tbody className="divide-y divide-[#24272A]">
-                {orders.slice(0, 5).map((order) => <tr key={order.id} className="transition-colors hover:bg-[#1D2023]"><td className="px-5 py-4 font-mono text-xs text-[#B8BAB7]">{order.id}</td><td className="px-5 py-4 text-[#F1F1EF]">{order.customer_name || 'Unnamed customer'}</td><td className="px-5 py-4 font-medium text-[#F1F1EF]">{formatMoney(order.total_amount)}</td><td className="px-5 py-4"><StatusBadge status={normalizeAdminOrderStatus(order.status)} /></td></tr>)}
-                {!loading && !orders.length && <tr><td colSpan="4" className="p-8 text-center text-sm text-[#858884]">No orders found in the database.</td></tr>}
-                {loading && <tr><td colSpan="4" className="p-8 text-center text-sm text-[#858884]">Loading live orders...</td></tr>}
+      <div className="admin-dashboard__content-grid">
+        <section className="admin-dashboard-panel admin-orders-panel">
+          <header className="admin-panel-heading"><div><span className="admin-panel-heading__eyebrow">Fulfillment</span><h2>Recent orders</h2><p>Newest activity from your order list.</p></div><button type="button" onClick={() => navigate(`${adminBasePath}/orders` || '/orders')} className="admin-text-action">All orders <ChevronRight className="h-4 w-4" aria-hidden="true" /></button></header>
+          <div className="admin-table-wrap">
+            <table className="admin-table w-full min-w-[540px] text-left text-sm">
+              <thead><tr><th>Order</th><th>Customer</th><th>Amount</th><th>Status</th></tr></thead>
+              <tbody>
+                {orders.slice(0, 5).map((order) => <tr key={order.id}><td><span className="admin-order-reference" title={String(order.id)}>#{String(order.id).slice(-8).toUpperCase()}</span><small>{order.created_at ? new Date(order.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'Date unavailable'}</small></td><td><span className="admin-customer-name">{order.customer_name || 'Unnamed customer'}</span></td><td className="admin-order-amount">{formatMoney(order.total_amount)}</td><td><StatusBadge status={normalizeAdminOrderStatus(order.status)} /></td></tr>)}
+                {!loading && !orders.length && <tr><td colSpan="4" className="admin-table-empty">No orders found yet.</td></tr>}
+                {loading && <tr><td colSpan="4" className="admin-table-empty" role="status">Loading live orders…</td></tr>}
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
 
-        <div className="admin-dashboard-panel overflow-hidden rounded-xl border border-[#24272A] bg-[#17191C] shadow-sm">
-          <div className="flex items-center justify-between border-b border-[#24272A] p-5"><h3 className="flex items-center gap-2 font-semibold text-[#F1F3EF]"><AlertTriangle className="admin-stock-icon h-4 w-4" /> Stock alerts</h3><button type="button" onClick={() => navigate(`${adminBasePath}/products` || '/products')} className="text-xs font-semibold text-[#C08457] hover:underline">Manage inventory</button></div>
-          <div className="space-y-4 p-5">
-            {lowStockProducts.slice(0, 8).map((product) => <div key={product.id} className="flex items-start justify-between gap-3 border-b border-[#24272A] pb-4 last:border-0 last:pb-0"><div className="min-w-0"><p className="line-clamp-1 text-sm font-medium text-[#F1F3EF]">{product.name || 'Unnamed appliance'}</p><p className="mt-1 text-xs text-[#858884]">{Number(product.stock || 0) <= 0 ? 'Out of stock' : 'Low stock'}</p></div><div className={`shrink-0 rounded px-2 py-1 text-xs font-bold ${Number(product.stock || 0) <= 0 ? 'bg-red-500/20 text-red-300' : 'wen-warning-badge'}`}>{Number(product.stock || 0)} left</div></div>)}
-            {!loading && !lowStockProducts.length && <p className="py-4 text-center text-sm text-[#858884]">Inventory levels are healthy.</p>}
-            {loading && <p className="py-4 text-center text-sm text-[#858884]">Loading inventory...</p>}
+        <section className="admin-dashboard-panel admin-stock-panel">
+          <header className="admin-panel-heading"><div><span className="admin-panel-heading__eyebrow">Inventory</span><h2>Stock watch</h2><p>Items that may need attention.</p></div><span className="admin-panel-heading__icon"><AlertTriangle className="h-4 w-4" aria-hidden="true" /></span></header>
+          <div className="admin-stock-list">
+            {lowStockProducts.slice(0, 6).map((product) => <div key={product.id} className="admin-stock-row"><span className="admin-stock-row__icon"><Package className="h-4 w-4" aria-hidden="true" /></span><span className="admin-stock-row__info"><strong>{product.name || 'Unnamed appliance'}</strong><small>{Number(product.stock || 0) <= 0 ? 'Out of stock' : 'Running low'}</small></span><span className={`admin-stock-count ${Number(product.stock || 0) <= 0 ? 'is-empty' : ''}`}>{Number(product.stock || 0)} left</span></div>)}
+            {!loading && !lowStockProducts.length && <p className="admin-stock-empty"><CheckCircle2 className="h-5 w-5" aria-hidden="true" /> Inventory levels are healthy.</p>}
+            {loading && <p className="admin-stock-empty" role="status">Checking inventory…</p>}
           </div>
-          <div className="border-t border-[#24272A] p-5">
-            <button type="button" onClick={() => navigate(`${adminBasePath}/chats` || '/chats')} className="flex min-h-11 w-full items-center justify-between rounded-lg border border-[#3A3D40] px-3 py-2 text-left text-sm text-[#F1F3EF] transition hover:border-[#9C6644] hover:bg-[#0B0B0C]">
-              <span className="flex items-center gap-2"><MessagesSquare className="h-4 w-4 text-[#C08457]" aria-hidden="true" /> Support inbox</span>
-              <span className="rounded-full bg-[#9C6644] px-2 py-0.5 text-xs font-bold text-white">{summary?.unread_customer_messages ?? '—'}</span>
-            </button>
-          </div>
-        </div>
+          <button type="button" onClick={() => navigate(`${adminBasePath}/products` || '/products')} className="admin-panel-footer-action">Review inventory <ChevronRight className="h-4 w-4" aria-hidden="true" /></button>
+        </section>
       </div>
+
+      <section className="admin-shortcuts">
+        <div className="admin-shortcuts__heading"><span className="admin-panel-heading__eyebrow">Move work forward</span><h2>Quick access</h2></div>
+        <div className="admin-shortcuts__grid">
+          <button type="button" onClick={() => navigate(`${adminBasePath}/orders` || '/orders')}><span><ShoppingCart className="h-4 w-4" aria-hidden="true" /></span><strong>Order desk</strong><small>Review and update orders</small><ChevronRight className="admin-shortcuts__arrow h-4 w-4" aria-hidden="true" /></button>
+          <button type="button" onClick={() => navigate(`${adminBasePath}/products` || '/products')}><span><Package className="h-4 w-4" aria-hidden="true" /></span><strong>Product inventory</strong><small>Manage stock and listings</small><ChevronRight className="admin-shortcuts__arrow h-4 w-4" aria-hidden="true" /></button>
+          <button type="button" onClick={() => navigate(`${adminBasePath}/chats` || '/chats')}><span><MessagesSquare className="h-4 w-4" aria-hidden="true" /></span><strong>Customer inbox</strong><small>Reply to product questions</small><ChevronRight className="admin-shortcuts__arrow h-4 w-4" aria-hidden="true" /></button>
+        </div>
+      </section>
     </div>
   );
 };
 
-const StatCard = ({ title, value, icon: Icon, trend, color = "text-[#F1F1EF]" }) => (
-  <div className="admin-stat-card bg-[#17191C] p-6 rounded-xl border border-[#24272A] shadow-sm flex min-h-32 flex-col justify-between">
-    <div className="flex justify-between items-start">
-      <p className="text-[#858884] text-sm font-medium">{title}</p>
-      <div className="p-2 bg-[#24272A] rounded-lg"><Icon className={`h-4 w-4 ${color === 'text-[#F1F1EF]' ? 'text-[#9C6644]' : color}`} /></div>
-    </div>
-    <div className="mt-4 flex items-start justify-between gap-3">
-      <h3 className={`min-w-0 break-words text-2xl font-bold leading-tight tracking-tight ${color}`}>
-        {typeof value === 'string' && value.includes('|')
-          ? value.split('|').map((part) => <span key={part.trim()} className="block text-xl sm:text-2xl">{part.trim()}</span>)
-          : value}
-      </h3>
+const StatCard = ({ title, value, icon: Icon, trend, color = "text-[#F1F1EF]", loading = false, caption }) => (
+  <article className="admin-stat-card">
+    <div className="admin-stat-card__top"><p>{title}</p><span className={`admin-stat-card__icon ${color === 'text-[#F1F1EF]' ? '' : color}`}><Icon className="h-[18px] w-[18px]" aria-hidden="true" /></span></div>
+    <div className="admin-stat-card__value-row">
+      {loading ? <span className="admin-stat-card__skeleton" aria-hidden="true" /> : <strong>{value}</strong>}
       {trend && <span className="text-xs font-medium text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded">{trend}</span>}
     </div>
-  </div>
+    <span className="admin-stat-card__caption">{caption}</span>
+  </article>
 );
 
 const ConfirmModal = ({ message, onConfirm, onCancel }) => (
@@ -2360,15 +2357,16 @@ const AdminProducts = () => {
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
-      <div className="flex justify-between items-end">
+    <div className="admin-inventory-page space-y-6 animate-in fade-in duration-300">
+      <div className="admin-page-heading flex flex-wrap items-end justify-between gap-4">
         <div>
+          <p className="admin-page-kicker">Products &amp; inventory</p>
           <h1 className="text-2xl font-bold tracking-tight">Product Database</h1>
-          <p className="text-[#858884] mt-1 text-sm">Manage inventory, pricing, and catalog metadata.</p>
+          <p className="mt-1 text-sm text-[#858884]">Manage inventory, pricing, and catalog metadata.</p>
         </div>
         <button 
           onClick={() => { setSaveError(''); navigate(`${adminBasePath}/new-product` || '/new-product'); }}
-          className="bg-[#9C6644] hover:bg-[#8A5A3C] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+          className="admin-primary-action bg-[#9C6644] hover:bg-[#8A5A3C] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
         >
           <Plus className="h-4 w-4" /> New Product
         </button>
@@ -2381,7 +2379,7 @@ const AdminProducts = () => {
         <p className="wen-warning-muted mt-1">Inventory remains available, but Publish/Hide is disabled. Apply <code className="rounded bg-black/10 px-1.5 py-0.5 font-semibold">20261018000000_admin_dashboard_operations.sql</code> in Supabase, then refresh this page.</p>
       </div>}
 
-      <div className="grid gap-3 rounded-xl border border-[#24272A] bg-[#17191C] p-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="admin-filter-panel grid gap-3 rounded-xl border border-[#24272A] bg-[#17191C] p-4 md:grid-cols-2 xl:grid-cols-4">
         <label className="relative block md:col-span-2 xl:col-span-1">
           <span className="sr-only">Search inventory</span>
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#858884]" aria-hidden="true" />
@@ -2413,9 +2411,9 @@ const AdminProducts = () => {
         </label>
       </div>
 
-      <div className="bg-[#17191C] border border-[#24272A] rounded-xl overflow-hidden shadow-sm">
+      <div className="admin-table-shell bg-[#17191C] border border-[#24272A] rounded-xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="admin-table w-full text-left text-sm">
             <thead className="bg-[#0B0B0C] text-[#858884] uppercase tracking-wider text-xs">
               <tr>
                 <th className="px-6 py-4 font-medium w-12">Img</th>
